@@ -3,6 +3,7 @@
 ## Data
 
 ### Pushkin texts
+57 texts from http://lib.pushkinskijdom.ru/.
 
 ### UD Old East Slavic-Ruthenian
 Parsed from Universal Dependencies `.conllu` files and converted to JSON, containing 420 cleaned documents. Sub-sources include:
@@ -18,10 +19,16 @@ Parsed from Universal Dependencies `.conllu` files (Russian National Corpus data
 - **Literary, historical, and miscellaneous texts**: Library of Literature of Ancient Rus (`bldr`), chronicles (`letopisi`, `psrl`), spells and incantations (`zagovor`), early Russian dramaturgy (`drama`), and various other records (`varia`, `rib`).
 
 ### SCAT
+26 raw texts containing Old Russian hagiographies (Жития), lives of saints, and other spiritual literature.
 
 ### Sofia
-154 documents from https://histdict.uni-sofia.bg
+154 documents from https://histdict.uni-sofia.bg (JSON format).
 
 ### Torot
+39 texts from the Tromsø Old Russian and OCS Treebank (TOROT), including prominent historical works like Afanasy Nikitin's "Journey Beyond Three Seas".
 
-### UAC
+### UAC (Ukrainian Archaeological Collection)
+6 texts containing Old Ruthenian legal documents, court records, and royal decrees (e.g., decrees of Sigismund Augustus).
+
+### Birchbark Letters
+Stored in `birchbark_classes.jsonl`, containing textual data and classifications for ancient birchbark letters.

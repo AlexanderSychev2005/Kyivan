@@ -6,11 +6,17 @@ def standard_clean(text):
     # Step 0: Unescape HTML entities
     text = html.unescape(text)
     
+    # 0.5 Literal slashes indicating line/page breaks in manuscript (e.g. //, /)
+    text = re.sub(r'//|/', '', text)
+    
     # Step 1: Remove text reconstruction brackets
     text = re.sub(r'[\(\)\[\]\<\>]', '', text)
     
     # Step 2: Replace lacunae with [UNK]
     text = re.sub(r'[\.…]{2,}|…+', '[UNK]', text)
+    
+    # Merge multiple consecutive [UNK] tags into one
+    text = re.sub(r'(\[UNK\]\s*){2,}', '[UNK] ', text)
     
     # Step 3: Cleanup multiple spaces
     text = re.sub(r'\s+', ' ', text)
@@ -43,12 +49,19 @@ def advanced_clean_non_polotsk(text):
     # 7. Numbered lists in brackets (e.g. [1.], [2.])
     text = re.sub(r'\[\d+\.\]', ' ', text)
     
-    # 8. Line breaks in the original XML (e.g. <lbr/>)
-    text = re.sub(r'<lbr/>', '', text)
+    # 8. Line breaks and weird editorial tags in the original XML (e.g. <_>, <_.>, <⌒>, <⋮>, <lbr/>)
+    text = re.sub(r'<(_|_\.|⌒|⋮|lbr/)>', '', text)
+    
+    # 9. Literal slashes indicating line/page breaks in manuscript (e.g. //, /)
+    text = re.sub(r'//|/', '', text)
     
     # Now proceed with the standard cleaning on the resulting text
     text = re.sub(r'[\(\)\[\]\<\>]', '', text)
     text = re.sub(r'[\.…]{2,}|…+', '[UNK]', text)
+    
+    # Merge multiple consecutive [UNK] tags into one
+    text = re.sub(r'(\[UNK\]\s*){2,}', '[UNK] ', text)
+    
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
@@ -66,8 +79,8 @@ def process_dataset(input_path, output_path):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 if __name__ == '__main__':
-    input_file = 'data/UD_Old_East_Slavic-Ruthenian/ruthenian_raw.json'
-    output_file = 'data/UD_Old_East_Slavic-Ruthenian/ruthenian_cleaned.json'
+    input_file = 'ruthenian_raw.json'
+    output_file = 'ruthenian_cleaned.json'
     
     print(f"Applying advanced cleaning to non-Polotsk documents...")
     process_dataset(input_file, output_file)

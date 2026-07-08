@@ -30,5 +30,8 @@ Parsed from Universal Dependencies `.conllu` files (Russian National Corpus data
 ### UAC (Ukrainian Archaeological Collection)
 6 texts containing Old Ruthenian legal documents, court records, and royal decrees (e.g., decrees of Sigismund Augustus).
 
+### Epigraphica
+Contains 620 historical inscriptions, graffiti, and records from ancient church walls (e.g. St. Sophia in Kyiv and Novgorod). These short, fragmentary texts include precise dating (years) extracted from a metadata CSV, mapped directly to cleaned text snippets with preserved lacunae formatting ([UNK]).
+
 ### Birchbark Letters
 Stored in `birchbark_classes.jsonl`, containing textual data and classifications for ancient birchbark letters.

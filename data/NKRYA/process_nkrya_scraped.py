@@ -19,8 +19,26 @@ TITLO_RANGE = range(0x0483, 0x0488)
 
 import html
 
+HOMOGLYPHS = {
+    'A': 'А', 'a': 'а', 'B': 'В', 'C': 'С', 'c': 'с', 'E': 'Е', 'e': 'е',
+    'H': 'Н', 'K': 'К', 'k': 'к', 'M': 'М', 'O': 'О', 'o': 'о',
+    'P': 'Р', 'p': 'р', 'T': 'Т', 'X': 'Х', 'x': 'х', 'y': 'у'
+}
+
+def fix_homoglyphs(text):
+    def replacer(match):
+        word = match.group(0)
+        if re.search(r'[а-яА-ЯёЁѣꙋѧѳѡꙗєѕІѹꙑѯѥїѠѱӏѫѿꙅꙊꙖꙥѦѭѵѪѻѩӓѸЄ]', word):
+            for lat, cyr in HOMOGLYPHS.items():
+                word = word.replace(lat, cyr)
+        return word
+    return re.sub(r'\b\w+\b', replacer, text)
+
 def clean_text_nkrya(text):
     text = html.unescape(text)
+    
+    # 0. Fix homoglyphs
+    text = fix_homoglyphs(text)
     
     # 1. Remove curly braces (folios, notes)
     text = re.sub(r'\{.*?\}', ' ', text)
@@ -32,10 +50,19 @@ def clean_text_nkrya(text):
     # 4. Mask [GAP] and [UNK] so they survive bracket stripping
     text = text.replace('[GAP]', '___GAP___')
     text = text.replace('[UNK]', '___UNK___')
-    # Strip parenthesis and brackets (restoring words e.g. д(е)р(е)вни -> деревни)
+    # Strip parenthesis and brackets
     text = re.sub(r'[\(\)\[\]]', '', text)
     text = text.replace('___GAP___', '[UNK]')
     text = text.replace('___UNK___', '[UNK]')
+    
+    # 4.5. Process dashes (epigraphy lacunae)
+    text = text.replace('‐', '-')
+    text = re.sub(r'-{2,}', '[UNK]', text)
+    CYR = r'[а-яА-ЯёЁѣꙋѧѳѡꙗєѕІѹꙑѯѥїѠѱӏѫѿꙅꙊꙖꙥѦѭѵѪѻѩӓѸЄ]'
+    text = re.sub(f'({CYR})-({CYR})', r'\1[UNK]\2', text)
+    text = re.sub(f'({CYR})-({CYR})', r'\1[UNK]\2', text)
+    text = re.sub(f'({CYR})-(?!\d)', r'\1[UNK]', text)
+    text = re.sub(rf'(?<!\d)-({CYR})', r'[UNK]\1', text)
     
     # 5. Convert lacunae to UNK
     text = re.sub(r'[\.…]{2,}|…+', '[UNK]', text)

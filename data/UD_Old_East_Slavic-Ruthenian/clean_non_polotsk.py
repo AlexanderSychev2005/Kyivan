@@ -49,6 +49,9 @@ def advanced_clean_non_polotsk(text):
     # 7. Numbered lists in brackets (e.g. [1.], [2.])
     text = re.sub(r'\[\d+\.\]', ' ', text)
     
+    # 7.5 Arabic numeral copies in brackets (e.g. [1652], [18])
+    text = re.sub(r'\[\d+\]', ' ', text)
+    
     # 8. Line breaks and weird editorial tags in the original XML (e.g. <_>, <_.>, <⌒>, <⋮>, <lbr/>)
     text = re.sub(r'<(_|_\.|⌒|⋮|lbr/)>', '', text)
     
@@ -70,6 +73,12 @@ def process_dataset(input_path, output_path):
         data = json.load(f)
         
     for doc in data:
+        if 'RatushnaKniga' in doc['doc_id']:
+            # Search for a 4-digit number in brackets starting with 15, 16, or 17
+            match = re.search(r'\[(1[567]\d{2})\]', doc['text'])
+            if match:
+                doc['doc_id'] = f"{doc['doc_id']}_{match.group(1)}"
+                
         if doc['doc_id'].startswith('polotsk'):
             doc['text'] = standard_clean(doc['text'])
         else:

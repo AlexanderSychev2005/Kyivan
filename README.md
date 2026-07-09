@@ -18,9 +18,6 @@ Parsed from Universal Dependencies `.conllu` files (Russian National Corpus data
 - **Charters and treaties**: Novgorod and Pskov Charters (`gvnp`, `pskov`), spiritual and contractual charters (`duhdog`).
 - **Literary, historical, and miscellaneous texts**: Library of Literature of Ancient Rus (`bldr`), chronicles (`letopisi`, `psrl`), spells and incantations (`zagovor`), early Russian dramaturgy (`drama`), and various other records (`varia`, `rib`).
 
-### SCAT
-26 raw texts containing Old Russian hagiographies (Жития), lives of saints, and other spiritual literature.
-
 ### Sofia
 154 documents from https://histdict.uni-sofia.bg (JSON format).
 

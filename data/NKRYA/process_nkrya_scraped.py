@@ -71,8 +71,7 @@ def clean_text_nkrya(text):
     for old, new in PUNCT_MAP.items():
         text = text.replace(old, new)
         
-    # 7. Remove titlos and combining inverted breve (U+0311)
-    text = "".join(c for c in text if ord(c) not in TITLO_RANGE and c != '\u0311')
+    # Titlos are preserved per user request
     
     # 8. Normalize unicode
     text = unicodedata.normalize('NFKC', text)
@@ -137,7 +136,7 @@ def process_and_deduplicate():
             raw_text = f.read()
             
         cleaned_text = clean_text_nkrya(raw_text)
-        if not cleaned_text or len(cleaned_text) < 15:
+        if not cleaned_text or len(cleaned_text.split()) < 5:
             empty_count += 1
             continue
             
@@ -162,6 +161,9 @@ def process_and_deduplicate():
         # Keep snippet
         seen_snippets.add(norm_text)
         dialect, year, category = extract_metadata_from_path(file_path)
+        if dialect in ["epigraph", "birch"]:
+            dropped_count += 1
+            continue
         
         doc_id = f"nkrya_scraped_{len(final_documents)}"
         folder_name = os.path.basename(os.path.dirname(file_path))

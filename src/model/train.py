@@ -160,8 +160,8 @@ class KyivanTrainer(Trainer):
         self.log_path = log_path
         self.log_history_custom = []
 
-    def log(self, logs: Dict[str, float], **kwargs) -> None:
-        super().log(logs, **kwargs)
+    def log(self, logs: Dict[str, float], *args, **kwargs) -> None:
+        super().log(logs, *args, **kwargs)
         self.log_history_custom.append(
             {"timestamp": datetime.now().isoformat(), **logs}
         )

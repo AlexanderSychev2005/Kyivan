@@ -102,7 +102,7 @@ def process_datasets():
         if not os.path.exists(json_path):
             continue
             
-        out_path = json_path.replace('.json', '_prepared.jsonl')
+        out_path = f'prepared_datasets/{ds_name}_prepared.jsonl'
         if 'nkrya_scraped_cleaned' in out_path:
             out_path = out_path.replace('nkrya_scraped_cleaned_prepared', 'nkrya_prepared')
             
@@ -154,7 +154,7 @@ def process_datasets():
     # Process birchbark
     birch_path = 'data/birchbark_classes.jsonl'
     if os.path.exists(birch_path):
-        out_path = 'data/birchbark_classes_prepared.jsonl'
+        out_path = 'prepared_datasets/birchbark_classes_prepared.jsonl'
         with open(birch_path, 'r', encoding='utf-8') as f, open(out_path, 'w', encoding='utf-8') as f_out:
             for line in f:
                 if not line.strip(): continue
@@ -178,6 +178,22 @@ def process_datasets():
                 f_out.write(json.dumps(doc, ensure_ascii=False) + '\n')
                 stats[macro_dialect] += 1
         print(f"Prepared birchbark -> {out_path}")
+
+    # Process epigraphica Test B
+    epi_brackets_path = 'data/epigraphica/epigraphica_final_cleaned_with_brackets.txt'
+    if os.path.exists(epi_brackets_path):
+        out_path = 'prepared_datasets/epigraphica_classes_prepared.jsonl'
+        with open(epi_brackets_path, 'r', encoding='utf-8') as f, open(out_path, 'w', encoding='utf-8') as f_out:
+            for line in f:
+                if not line.strip(): continue
+                doc = {
+                    'original': line.strip(),
+                    'macro_dialect': 'CS',
+                    'date_target': [0.0]*20
+                }
+                f_out.write(json.dumps(doc, ensure_ascii=False) + '\n')
+                stats['CS'] += 1
+        print(f"Prepared epigraphica brackets -> {out_path}")
 
     print("\n--- MACRO DIALECT STATS ---")
     for k, v in stats.items():

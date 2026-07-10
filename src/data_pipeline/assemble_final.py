@@ -4,7 +4,7 @@ import json
 import random
 
 def assemble():
-    input_files = glob.glob('prepared_datasets/*.jsonl')
+    input_files = [f for f in glob.glob('prepared_datasets/*_prepared.jsonl') if 'epigraphica_classes' not in f]
     all_docs = []
     
     print("Reading files...")
@@ -20,7 +20,7 @@ def assemble():
     random.seed(42)  # For reproducibility
     random.shuffle(all_docs)
     
-    out_path = 'data/final_dataset.jsonl'
+    out_path = 'prepared_datasets/final_dataset.jsonl'
     print(f"Writing to {out_path}...")
     with open(out_path, 'w', encoding='utf-8') as f_out:
         for doc in all_docs:

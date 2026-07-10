@@ -5,7 +5,10 @@ description = "Restoring Slavic texts"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "datasets>=5.0.0",
     "matplotlib>=3.11.0",
     "pandas>=3.0.3",
+    "ruff>=0.15.21",
+    "scikit-learn>=1.9.0",
     "seaborn>=0.13.2",
 ]

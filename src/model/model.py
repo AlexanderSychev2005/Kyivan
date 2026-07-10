@@ -219,7 +219,7 @@ class Kyivan(BertPreTrainedModel):
     config_class = KyivanConfig
 
     def __init__(
-        self, config: KyivanConfig, num_date_bins: int = 18, num_regions: int = 3
+        self, config: KyivanConfig, num_date_bins: int = 20, num_regions: int = 4
     ):
         super().__init__(config)
         # Disable absolute positional embeddings inherited from BERT

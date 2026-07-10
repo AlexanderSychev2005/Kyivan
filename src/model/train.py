@@ -231,10 +231,11 @@ class TestBEvalCallback(TrainerCallback):
     """
 
     def __init__(
-        self, test_b_dataset: Any, output_dir: Path, max_samples: Optional[int] = None
+        self, test_b_dataset: Any, output_dir: Path, char_vocab: Dict[str, int], max_samples: Optional[int] = None
     ) -> None:
         self.test_b_dataset = test_b_dataset
         self.output_dir = Path(output_dir)
+        self.char_vocab = char_vocab
         self.max_samples = max_samples
         self._in_eval = False
 
@@ -245,14 +246,28 @@ class TestBEvalCallback(TrainerCallback):
         try:
             self._in_eval = True
             ds = self.test_b_dataset
-            if self.max_samples is not None and hasattr(ds, "select"):
-                n = min(self.max_samples, len(ds))
-                ds = ds.select(range(n))
-
-            metrics = trainer.evaluate(eval_dataset=ds)
+            
             step = getattr(state, "global_step", None) or "final"
+            report_path = self.output_dir / f"pred_report_test_b_step{step}.csv"
+            
+            metrics = generate_predictions_report(
+                model=trainer.model,
+                char_vocab=self.char_vocab,
+                dataset=ds,
+                output_path=report_path,
+                max_samples=self.max_samples if self.max_samples else 1000,
+                collator=None,
+                batch_size=args.per_device_eval_batch_size,
+            )
+            
+            formatted_metrics = {f"eval_test_b_{k}": v for k, v in metrics.items()}
+            if hasattr(trainer, "log"):
+                trainer.log(formatted_metrics)
+                
             fname = self.output_dir / f"eval_metrics_test_b_step{step}.json"
+            from utils.common import save_json
             save_json(metrics, fname)
+            from utils.logger import log
             log.info(f"Saved Test B metrics: {fname}")
         finally:
             self._in_eval = False
@@ -619,8 +634,8 @@ def main() -> None:
         max_position_embeddings=args.max_len,
         pad_token_id=char_vocab["[PAD]"],
     )
-    # Configure the number of date bins (18) and dialect regions (3) based on the dataset taxonomy
-    model = Kyivan(config, num_date_bins=18, num_regions=3)
+    # Configure the number of date bins (20) and dialect regions (4) based on the dataset taxonomy
+    model = Kyivan(config, num_date_bins=20, num_regions=4)
 
     n_params = sum(p.numel() for p in model.parameters())
     log.info(f"  Total params: {n_params:,}")
@@ -668,7 +683,7 @@ def main() -> None:
     callbacks = []
     if "test_b" in dataset:
         callbacks.append(
-            TestBEvalCallback(dataset["test_b"], output_dir, args.max_report_samples)
+            TestBEvalCallback(dataset["test_b"], output_dir, char_vocab, args.max_report_samples)
         )
 
     trainer = KyivanAeneasTrainer(

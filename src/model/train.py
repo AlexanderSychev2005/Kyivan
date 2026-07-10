@@ -77,76 +77,142 @@ def save_json(data: Dict[str, Any], path: Union[str, Path]) -> None:
 
 def preprocess_logits_for_metrics(
     logits: Union[torch.Tensor, Tuple[torch.Tensor, ...]], labels: torch.Tensor
-) -> torch.Tensor:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    Prepares the logits for accuracy metric calculations by extracting the
-    restoration logits and masking out illegal tokens (e.g., special tags).
+    Prepares the logits for accuracy metric calculations by extracting
+    restoration, date, and region predictions.
 
     Args:
         logits (Union[torch.Tensor, Tuple[torch.Tensor, ...]]): The raw model outputs.
         labels (torch.Tensor): The target labels.
 
     Returns:
-        torch.Tensor: The top 5 predicted token indices.
+        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+            - Top 5 predicted token indices for restoration.
+            - Date distribution predictions (softmax probabilities).
+            - Region predicted class index.
     """
-    # Extract only the restoration logits (index 0) from the multi-task output tuple
+    # Extract logits from the multi-task output tuple
     if isinstance(logits, tuple):
         logits_restore = logits[0]
+        logits_date = logits[2] if len(logits) > 2 else None
+        logits_region = logits[3] if len(logits) > 3 else None
     else:
         logits_restore = logits
+        logits_date = None
+        logits_region = None
 
-    if ALLOWED_PRED_IDS is None:
-        return torch.topk(logits_restore, k=5, dim=-1).indices
+    # Top-5 restore predictions with illegal token masking
+    if ALLOWED_PRED_IDS is not None:
+        vocab_size = logits_restore.size(-1)
+        allowed_mask = torch.zeros(
+            vocab_size, dtype=torch.bool, device=logits_restore.device
+        )
+        allowed_idxs = torch.tensor(
+            list(ALLOWED_PRED_IDS), dtype=torch.long, device=logits_restore.device
+        )
+        allowed_mask[allowed_idxs] = True
+        masked_logits = logits_restore.clone()
+        masked_logits[..., ~allowed_mask] = -1e9
+        top5_restore = torch.topk(masked_logits, k=5, dim=-1).indices
+    else:
+        top5_restore = torch.topk(logits_restore, k=5, dim=-1).indices
 
-    vocab_size = logits_restore.size(-1)
-    allowed_mask = torch.zeros(
-        vocab_size, dtype=torch.bool, device=logits_restore.device
-    )
-    allowed_idxs = torch.tensor(
-        list(ALLOWED_PRED_IDS), dtype=torch.long, device=logits_restore.device
-    )
-    allowed_mask[allowed_idxs] = True
+    # Date: softmax probabilities [batch, num_date_bins]
+    if logits_date is not None:
+        date_probs = torch.softmax(logits_date, dim=-1)
+    else:
+        date_probs = torch.zeros(logits_restore.size(0), 1, device=logits_restore.device)
 
-    # Clone and penalize illegal tokens with a highly negative value
-    masked_logits = logits_restore.clone()
-    masked_logits[..., ~allowed_mask] = -1e9
+    # Region: argmax class [batch]
+    if logits_region is not None:
+        region_preds = torch.argmax(logits_region, dim=-1)
+    else:
+        region_preds = torch.zeros(logits_restore.size(0), dtype=torch.long, device=logits_restore.device)
 
-    return torch.topk(masked_logits, k=5, dim=-1).indices
+    return top5_restore, date_probs, region_preds
 
 
 def compute_metrics(eval_preds: Tuple[np.ndarray, np.ndarray]) -> Dict[str, float]:
     """
-    Calculates Top-1, Top-3, and Top-5 accuracy metrics for character restoration.
+    Calculates Top-1/3/5 accuracy for restoration, date MAE, and region accuracy.
 
     Args:
         eval_preds (Tuple[np.ndarray, np.ndarray]): A tuple containing the model
                                                     predictions and the true labels.
 
     Returns:
-        Dict[str, float]: A dictionary containing the calculated accuracy metrics.
+        Dict[str, float]: A dictionary containing the calculated metrics.
     """
     preds, labels = eval_preds
 
+    # preds is a tuple: (top5_restore, date_probs, region_preds)
+    # labels is a tuple: (labels_restore, unk_labels, date_labels, region_labels)
+    if isinstance(preds, tuple):
+        restore_preds, date_pred_probs, region_preds = preds
+    else:
+        restore_preds = preds
+        date_pred_probs = None
+        region_preds = None
+
     if isinstance(labels, tuple):
-        labels = labels[0]
+        labels_restore = labels[0]
+        date_labels = labels[2] if len(labels) > 2 else None
+        region_labels = labels[3] if len(labels) > 3 else None
+    else:
+        labels_restore = labels
+        date_labels = None
+        region_labels = None
 
-    # Ignore padding and unmasked tokens
-    mask = labels != -100
-    labels = labels[mask]
-    preds = preds[mask]
+    metrics = {}
 
-    if labels.size == 0:
-        return {"top1_accuracy": 0.0, "top3_accuracy": 0.0, "top5_accuracy": 0.0}
+    # --- 1. Restoration Top-K Accuracy ---
+    mask = labels_restore != -100
+    masked_labels = labels_restore[mask]
+    masked_preds = restore_preds[mask]
 
-    return {
-        "top1_accuracy": float(np.mean(preds[:, 0] == labels)),
-        "top3_accuracy": float(
-            np.mean(np.any(preds[:, :3] == labels[:, None], axis=1))
-        ),
-        "top5_accuracy": float(
-            np.mean(np.any(preds[:, :5] == labels[:, None], axis=1))
-        ),
-    }
+    if masked_labels.size == 0:
+        metrics["top1_accuracy"] = 0.0
+        metrics["top3_accuracy"] = 0.0
+        metrics["top5_accuracy"] = 0.0
+    else:
+        metrics["top1_accuracy"] = float(np.mean(masked_preds[:, 0] == masked_labels))
+        metrics["top3_accuracy"] = float(
+            np.mean(np.any(masked_preds[:, :3] == masked_labels[:, None], axis=1))
+        )
+        metrics["top5_accuracy"] = float(
+            np.mean(np.any(masked_preds[:, :5] == masked_labels[:, None], axis=1))
+        )
+
+    # --- 2. Date MAE (Mean Absolute Error on predicted vs true date distribution peak) ---
+    if date_pred_probs is not None and date_labels is not None:
+        try:
+            # date_pred_probs: [batch, num_bins], date_labels: [batch, num_bins]
+            # Compare the peak bin (argmax) of predicted vs true distribution
+            pred_peak_bin = np.argmax(date_pred_probs, axis=-1)  # [batch]
+            true_peak_bin = np.argmax(date_labels, axis=-1)       # [batch]
+            # MAE in bins (each bin = 50 years)
+            metrics["date_bin_mae"] = float(np.mean(np.abs(pred_peak_bin - true_peak_bin)))
+            # MAE in years (multiply bin distance by 50)
+            metrics["date_years_mae"] = float(np.mean(np.abs(pred_peak_bin - true_peak_bin)) * 50)
+            # Exact bin match accuracy
+            metrics["date_exact_accuracy"] = float(np.mean(pred_peak_bin == true_peak_bin))
+        except Exception:
+            pass
+
+    # --- 3. Region Classification Accuracy ---
+    if region_preds is not None and region_labels is not None:
+        try:
+            # region_labels: [batch], region_preds: [batch]
+            valid_mask = region_labels != -100
+            if np.any(valid_mask):
+                metrics["region_accuracy"] = float(
+                    np.mean(region_preds[valid_mask] == region_labels[valid_mask])
+                )
+        except Exception:
+            pass
+
+    return metrics
 
 
 class KyivanTrainer(Trainer):

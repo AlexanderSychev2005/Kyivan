@@ -672,6 +672,7 @@ def main() -> None:
         max_grad_norm=1.0,
         dataloader_num_workers=4,
         report_to=[],
+        label_names=["labels", "unk_labels", "date_labels", "region_labels"],
         load_best_model_at_end=True,
         metric_for_best_model="top1_accuracy",
         greater_is_better=True,

@@ -51,6 +51,7 @@ class KyivanConfig(BertConfig):
         """
         # Hardcode position embedding type to bypass traditional absolute positions
         kwargs["position_embedding_type"] = "none"
+        kwargs.pop("vocab_size", None)
 
         super().__init__(
             vocab_size=vocab_char_size,

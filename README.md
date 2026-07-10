@@ -1,6 +1,6 @@
-# Kyivan-Aeneas: Ancient Slavic Text Restoration Model
+# Kyivan: Ancient Slavic Text Restoration Model
 
-**Kyivan-Aeneas** is a specialized Transformer-based model designed for the restoration and analysis of ancient Slavic texts (IX–XIX centuries). By leveraging multi-task learning and dynamic physical degradation simulation, the model aims to accurately restore missing characters in historical documents (such as birchbark letters and epigraphica), predict the historical era (dates), and identify the dialectical region of a text.
+**Kyivan** is a specialized Transformer-based model designed for the restoration and analysis of ancient Slavic texts (IX–XIX centuries). By leveraging multi-task learning and dynamic physical degradation simulation, the model aims to accurately restore missing characters in historical documents (such as birchbark letters and epigraphica), predict the historical era (dates), and identify the dialectical region of a text.
 
 ---
 
@@ -58,7 +58,7 @@ The model is forced to learn robust linguistic patterns rather than memorizing p
 3. Activate the virtual environment (if not automatically activated by your IDE).
 
 ### Running the Training
-Everything is handled by `src/model/train.py`. It uses a custom `KyivanAeneasTrainer` that calculates a weighted multi-task loss and evaluates on historical brackets (`TestBEvalCallback`).
+Everything is handled by `src/model/train.py`. It uses a custom `KyivanTrainer` that calculates a weighted multi-task loss and evaluates on historical brackets (`TestBEvalCallback`).
 
 To start training with default parameters:
 ```bash

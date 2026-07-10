@@ -2,7 +2,7 @@
 Character-Level Tokenizer Builder.
 
 This script builds a character-level vocabulary required for the non-autoregressive
-Kyivan-Aeneas model. Unlike standard subword tokenizers (like WordPiece or BPE),
+Kyivan model. Unlike standard subword tokenizers (like WordPiece or BPE),
 this tokenizer operates strictly on individual characters. This approach is highly
 efficient for handling heavily inflected ancient Slavic languages and physical text
 degradations (e.g., missing fragments on birch bark).
@@ -118,7 +118,7 @@ def main() -> None:
     and saves the resulting vocabulary and configuration JSON files to disk.
     """
     parser = argparse.ArgumentParser(
-        description="Build Character Vocabulary for Kyivan-Aeneas"
+        description="Build Character Vocabulary for Kyivan"
     )
     parser.add_argument(
         "--train_path", default="splits/train.jsonl", help="Path to the training data"

@@ -246,7 +246,7 @@ class KyivanRestorer:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Kyivan-Aeneas Inference Script")
+    parser = argparse.ArgumentParser(description="Kyivan Inference Script")
     parser.add_argument(
         "--model_dir",
         default="novgorodets/artifacts/training_output/final_model",

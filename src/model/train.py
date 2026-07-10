@@ -7,7 +7,7 @@ evaluation on dynamically masked text (Test A) and historical lacunae (Test B),
 and generates detailed CSV prediction reports for linguists.
 
 Key components:
-1. `KyivanAeneasTrainer`: A custom HuggingFace Trainer that overrides `compute_loss`
+1. `KyivanTrainer`: A custom HuggingFace Trainer that overrides `compute_loss`
    to calculate a weighted sum of 4 distinct losses (Restoration, Unk, Date, Region).
 2. `TestBEvalCallback`: Automatically evaluates the model on the historical Test B
    dataset during the standard evaluation loop.
@@ -149,7 +149,7 @@ def compute_metrics(eval_preds: Tuple[np.ndarray, np.ndarray]) -> Dict[str, floa
     }
 
 
-class KyivanAeneasTrainer(Trainer):
+class KyivanTrainer(Trainer):
     """
     Custom Trainer integrating the multi-task loss function from the Aeneas paper.
     It balances character restoration, gap extension prediction, dating, and dialect classification.
@@ -537,7 +537,7 @@ def main() -> None:
     """
     Parses arguments, initializes the model and trainer, and executes the training loop.
     """
-    parser = argparse.ArgumentParser(description="Kyivan-Aeneas Multi-Task Trainer")
+    parser = argparse.ArgumentParser(description="Kyivan Multi-Task Trainer")
 
     parser.add_argument(
         "--dataset_dir",
@@ -686,7 +686,7 @@ def main() -> None:
             TestBEvalCallback(dataset["test_b"], output_dir, char_vocab, args.max_report_samples)
         )
 
-    trainer = KyivanAeneasTrainer(
+    trainer = KyivanTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset["train"],

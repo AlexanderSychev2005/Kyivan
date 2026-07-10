@@ -174,6 +174,7 @@ class KyivanTrainer(Trainer):
         model: nn.Module,
         inputs: Dict[str, torch.Tensor],
         return_outputs: bool = False,
+        **kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Any]]:
         """
         Computes the weighted multi-task loss.
@@ -666,8 +667,8 @@ def main() -> None:
         learning_rate=args.lr,
         lr_scheduler_type="cosine",
         warmup_steps=args.warmup_steps,
+        fp16=True,
         weight_decay=0.01,
-        fp16=args.fp16,
         max_grad_norm=1.0,
         dataloader_num_workers=4,
         report_to=[],

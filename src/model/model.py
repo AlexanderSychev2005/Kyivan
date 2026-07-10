@@ -142,6 +142,11 @@ class BertSelfAttentionWithRoPE(BertSelfAttention):
             max_position_embeddings=config.max_position_embeddings,
         )
 
+    def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(new_x_shape)
+        return x.permute(0, 2, 1, 3)
+
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -151,6 +156,7 @@ class BertSelfAttentionWithRoPE(BertSelfAttention):
         encoder_attention_mask: Optional[torch.Tensor] = None,
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
         output_attentions: bool = False,
+        **kwargs,
     ) -> Tuple[torch.Tensor, ...]:
         """
         Forward pass for the custom Self-Attention layer injecting RoPE.
@@ -199,10 +205,7 @@ class BertSelfAttentionWithRoPE(BertSelfAttention):
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
 
-        outputs = (
-            (context_layer, attention_probs) if output_attentions else (context_layer,)
-        )
-        return outputs
+        return context_layer, (attention_probs if output_attentions else None)
 
 
 @dataclass
@@ -316,7 +319,7 @@ class Kyivan(BertPreTrainedModel):
         x = self.emb_dropout(x)
 
         ext_mask = self.get_extended_attention_mask(
-            attention_mask, input_ids.shape, input_ids.device
+            attention_mask, input_ids.shape
         )
 
         # Pass through the RoPE-enabled encoder torso

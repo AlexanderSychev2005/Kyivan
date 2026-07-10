@@ -611,7 +611,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     log.info("=" * 80)
-    log.info("Starting Kyivan Aeneas Training")
+    log.info("Starting Kyivan Training")
     log.info("=" * 80)
 
     dataset = load_from_disk(args.dataset_dir)
@@ -654,12 +654,11 @@ def main() -> None:
 
     training_args = TrainingArguments(
         output_dir=str(checkpoint_dir),
-        overwrite_output_dir=True,
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.train_bs,
         per_device_eval_batch_size=args.eval_bs,
         gradient_accumulation_steps=args.grad_accum,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=args.eval_steps,
         save_steps=args.eval_steps,
         save_total_limit=3,

@@ -605,11 +605,21 @@ def main() -> None:
         default=1000,
         help="Max samples for the CSV report",
     )
+    parser.add_argument(
+        "--resume_from_checkpoint",
+        type=str,
+        default=None,
+        help="Path to a checkpoint folder to resume training from, or 'True' to auto-resume from the latest in output_dir",
+    )
 
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    fh = logging.FileHandler(output_dir / "training.log", mode="a", encoding="utf-8")
+    fh.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    log.addHandler(fh)
 
     log.info("=" * 80)
     log.info("Starting Kyivan Training")
@@ -700,7 +710,12 @@ def main() -> None:
     )
 
     log.info("Starting training...")
-    train_result = trainer.train()
+    
+    resume_checkpoint = args.resume_from_checkpoint
+    if resume_checkpoint is not None and resume_checkpoint.lower() == "true":
+        resume_checkpoint = True
+        
+    train_result = trainer.train(resume_from_checkpoint=resume_checkpoint)
 
     with open(log_path, "w", encoding="utf-8") as f:
         json.dump(trainer.log_history_custom, f, ensure_ascii=False, indent=2)

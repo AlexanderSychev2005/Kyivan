@@ -143,7 +143,10 @@ class BertSelfAttentionWithRoPE(BertSelfAttention):
         )
 
     def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        new_x_shape = x.size()[:-1] + (
+            self.num_attention_heads,
+            self.attention_head_size,
+        )
         x = x.view(new_x_shape)
         return x.permute(0, 2, 1, 3)
 
@@ -170,7 +173,9 @@ class BertSelfAttentionWithRoPE(BertSelfAttention):
             past_key_value (Optional[Tuple[torch.Tensor]]): Cached key and value states.
             output_attentions (bool): Whether or not to return the attentions tensors.
         """
-        output_attentions = getattr(self.config, "output_attentions", output_attentions) or kwargs.get("output_attentions", output_attentions)
+        output_attentions = getattr(
+            self.config, "output_attentions", output_attentions
+        ) or kwargs.get("output_attentions", output_attentions)
         mixed_query_layer = self.query(hidden_states)
         key_layer = self.transpose_for_scores(self.key(hidden_states))
         value_layer = self.transpose_for_scores(self.value(hidden_states))
@@ -197,7 +202,7 @@ class BertSelfAttentionWithRoPE(BertSelfAttention):
 
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
         attention_probs = self.dropout(attention_probs)
-        
+
         self._last_attention = attention_probs
 
         context_layer = torch.matmul(attention_probs, value_layer)
@@ -318,9 +323,7 @@ class Kyivan(BertPreTrainedModel):
         x = self.emb_norm(x)
         x = self.emb_dropout(x)
 
-        ext_mask = self.get_extended_attention_mask(
-            attention_mask, input_ids.shape
-        )
+        ext_mask = self.get_extended_attention_mask(attention_mask, input_ids.shape)
 
         # Pass through the RoPE-enabled encoder torso
         enc_out = self.encoder(
@@ -340,7 +343,7 @@ class Kyivan(BertPreTrainedModel):
         sos_vectors = seq[:, 0, :]
         logits_date = self.date_head(sos_vectors)
         logits_region = self.region_head(sos_vectors)
-        
+
         # Manually extract the attention from the last layer to bypass HF tuple dropping
         last_attn = self.encoder.layer[-1].attention.self._last_attention
         extracted_attentions = (last_attn,) if last_attn is not None else None

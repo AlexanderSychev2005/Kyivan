@@ -21,8 +21,8 @@
 
 import json
 import re
-import time
 import sys
+import time
 from pathlib import Path
 
 import requests
@@ -38,14 +38,12 @@ LIST_PAGES = [
 
 OUTPUT_PATH = Path("histdict_corpus.json")
 
-REQUEST_DELAY = 1.0        # пауза между запросами, сек (вежливость к серверу)
+REQUEST_DELAY = 1.0  # пауза между запросами, сек (вежливость к серверу)
 TIMEOUT = 60
 MAX_RETRIES = 3
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0"
-    ),
+    "User-Agent": ("Mozilla/5.0"),
     "Accept-Language": "bg,ru;q=0.8,en;q=0.5",
 }
 
@@ -92,8 +90,11 @@ def get(session, url):
         except requests.RequestException as e:
             last_exc = e
             wait = REQUEST_DELAY * attempt * 2
-            print(f"  ! попытка {attempt}/{MAX_RETRIES} не удалась для {url}: {e}"
-                  f" — жду {wait:.1f}s", file=sys.stderr)
+            print(
+                f"  ! попытка {attempt}/{MAX_RETRIES} не удалась для {url}: {e}"
+                f" — жду {wait:.1f}s",
+                file=sys.stderr,
+            )
             time.sleep(wait)
     raise last_exc
 
@@ -129,6 +130,7 @@ def _is_inside(el, class_name):
             return True
         p = getattr(p, "parent", None)
     return False
+
 
 # --- Тело памятника: извлечь только основной текст из real_text/body ---
 def _extract_main_from_spans(soup):
@@ -182,6 +184,7 @@ def _extract_main_from_spans(soup):
         lines.pop()
     return "\n".join(lines)
 
+
 def parse_document(html, url, doc_id):
     """
     Разбирает страницу документа.
@@ -211,7 +214,7 @@ def parse_document(html, url, doc_id):
     for marker in ("Текстов корпус", "Архивски Хронограф"):
         idx = full_text.find(marker)
         if idx != -1:
-            full_text = full_text[idx + len(marker):]
+            full_text = full_text[idx + len(marker) :]
             break
 
     # --- Отрезаем подвал с копирайтом
@@ -239,13 +242,13 @@ def parse_document(html, url, doc_id):
     m_docid = re.search(r"doc_id\s*doc_\d+", joined)
     if m_docid:
         meta_zone = joined[: m_docid.end()]
-        content_zone = joined[m_docid.end():]
+        content_zone = joined[m_docid.end() :]
     else:
         # запасной вариант: мета — до первого маркера страницы вида "12a"/"3b"
         m_page = re.search(r"\n\s*\d+[ab]\s*\n", joined)
         if m_page:
             meta_zone = joined[: m_page.start()]
-            content_zone = joined[m_page.start():]
+            content_zone = joined[m_page.start() :]
         else:
             # совсем запасной: первые 1200 символов — мета, остальное тело
             meta_zone = joined[:1200]
@@ -321,12 +324,16 @@ def scrape():
                 all_records.append(record)
             except Exception as e:
                 print(f"  !! пропущен {doc_id}: {e}", file=sys.stderr)
-                all_records.append({
-                    "doc_id": doc_id,
-                    "url": doc_url,
-                    "section": "chronograph" if "chronograph" in doc_url else "textcorpus",
-                    "error": str(e),
-                })
+                all_records.append(
+                    {
+                        "doc_id": doc_id,
+                        "url": doc_url,
+                        "section": "chronograph"
+                        if "chronograph" in doc_url
+                        else "textcorpus",
+                        "error": str(e),
+                    }
+                )
 
             time.sleep(REQUEST_DELAY)
 
@@ -340,8 +347,10 @@ def main():
 
     ok = [r for r in records if "error" not in r]
     err = [r for r in records if "error" in r]
-    print(f"\nГотово. Всего записей: {len(records)} "
-          f"(успешно: {len(ok)}, с ошибкой: {len(err)})")
+    print(
+        f"\nГотово. Всего записей: {len(records)} "
+        f"(успешно: {len(ok)}, с ошибкой: {len(err)})"
+    )
     print(f"Сохранено в: {OUTPUT_PATH.resolve()}")
     if err:
         print("Документы с ошибками:", ", ".join(r["doc_id"] for r in err))

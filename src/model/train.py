@@ -122,13 +122,17 @@ def preprocess_logits_for_metrics(
     if logits_date is not None:
         date_probs = torch.softmax(logits_date, dim=-1)
     else:
-        date_probs = torch.zeros(logits_restore.size(0), 1, device=logits_restore.device)
+        date_probs = torch.zeros(
+            logits_restore.size(0), 1, device=logits_restore.device
+        )
 
     # Region: argmax class [batch]
     if logits_region is not None:
         region_preds = torch.argmax(logits_region, dim=-1)
     else:
-        region_preds = torch.zeros(logits_restore.size(0), dtype=torch.long, device=logits_restore.device)
+        region_preds = torch.zeros(
+            logits_restore.size(0), dtype=torch.long, device=logits_restore.device
+        )
 
     return top5_restore, date_probs, region_preds
 
@@ -190,13 +194,19 @@ def compute_metrics(eval_preds: Tuple[np.ndarray, np.ndarray]) -> Dict[str, floa
             # date_pred_probs: [batch, num_bins], date_labels: [batch, num_bins]
             # Compare the peak bin (argmax) of predicted vs true distribution
             pred_peak_bin = np.argmax(date_pred_probs, axis=-1)  # [batch]
-            true_peak_bin = np.argmax(date_labels, axis=-1)       # [batch]
+            true_peak_bin = np.argmax(date_labels, axis=-1)  # [batch]
             # MAE in bins (each bin = 50 years)
-            metrics["date_bin_mae"] = float(np.mean(np.abs(pred_peak_bin - true_peak_bin)))
+            metrics["date_bin_mae"] = float(
+                np.mean(np.abs(pred_peak_bin - true_peak_bin))
+            )
             # MAE in years (multiply bin distance by 50)
-            metrics["date_years_mae"] = float(np.mean(np.abs(pred_peak_bin - true_peak_bin)) * 50)
+            metrics["date_years_mae"] = float(
+                np.mean(np.abs(pred_peak_bin - true_peak_bin)) * 50
+            )
             # Exact bin match accuracy
-            metrics["date_exact_accuracy"] = float(np.mean(pred_peak_bin == true_peak_bin))
+            metrics["date_exact_accuracy"] = float(
+                np.mean(pred_peak_bin == true_peak_bin)
+            )
         except Exception:
             pass
 
@@ -298,7 +308,11 @@ class TestBEvalCallback(TrainerCallback):
     """
 
     def __init__(
-        self, test_b_dataset: Any, output_dir: Path, char_vocab: Dict[str, int], max_samples: Optional[int] = None
+        self,
+        test_b_dataset: Any,
+        output_dir: Path,
+        char_vocab: Dict[str, int],
+        max_samples: Optional[int] = None,
     ) -> None:
         self.test_b_dataset = test_b_dataset
         self.output_dir = Path(output_dir)
@@ -313,10 +327,10 @@ class TestBEvalCallback(TrainerCallback):
         try:
             self._in_eval = True
             ds = self.test_b_dataset
-            
+
             step = getattr(state, "global_step", None) or "final"
             report_path = self.output_dir / f"pred_report_test_b_step{step}.csv"
-            
+
             metrics = generate_predictions_report(
                 model=trainer.model,
                 char_vocab=self.char_vocab,
@@ -326,15 +340,17 @@ class TestBEvalCallback(TrainerCallback):
                 collator=None,
                 batch_size=args.per_device_eval_batch_size,
             )
-            
+
             formatted_metrics = {f"eval_test_b_{k}": v for k, v in metrics.items()}
             if hasattr(trainer, "log"):
                 trainer.log(formatted_metrics)
-                
+
             fname = self.output_dir / f"eval_metrics_test_b_step{step}.json"
             from utils.common import save_json
+
             save_json(metrics, fname)
             from utils.logger import log
+
             log.info(f"Saved Test B metrics: {fname}")
         finally:
             self._in_eval = False
@@ -658,16 +674,23 @@ def main() -> None:
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for reproducibility"
     )
-    
+
     # Speed and Memory Optimizations
     parser.add_argument(
-        "--torch_compile", action="store_true", help="Compile model via torch.compile (requires PyTorch 2.0+)"
+        "--torch_compile",
+        action="store_true",
+        help="Compile model via torch.compile (requires PyTorch 2.0+)",
     )
     parser.add_argument(
-        "--gradient_checkpointing", action="store_true", help="Enable gradient checkpointing to save VRAM"
+        "--gradient_checkpointing",
+        action="store_true",
+        help="Enable gradient checkpointing to save VRAM",
     )
     parser.add_argument(
-        "--optim", type=str, default="adamw_torch", help="Optimizer to use (e.g. adamw_bnb_8bit)"
+        "--optim",
+        type=str,
+        default="adamw_torch",
+        help="Optimizer to use (e.g. adamw_bnb_8bit)",
     )
 
     parser.add_argument(
@@ -695,7 +718,9 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     fh = logging.FileHandler(output_dir / "training.log", mode="a", encoding="utf-8")
-    fh.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    fh.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
     log.addHandler(fh)
 
     log.info("=" * 80)
@@ -774,7 +799,9 @@ def main() -> None:
     callbacks = []
     if "test_b" in dataset:
         callbacks.append(
-            TestBEvalCallback(dataset["test_b"], output_dir, char_vocab, args.max_report_samples)
+            TestBEvalCallback(
+                dataset["test_b"], output_dir, char_vocab, args.max_report_samples
+            )
         )
 
     trainer = KyivanTrainer(
@@ -790,11 +817,11 @@ def main() -> None:
     )
 
     log.info("Starting training...")
-    
+
     resume_checkpoint = args.resume_from_checkpoint
     if resume_checkpoint is not None and resume_checkpoint.lower() == "true":
         resume_checkpoint = True
-        
+
     train_result = trainer.train(resume_from_checkpoint=resume_checkpoint)
 
     with open(log_path, "w", encoding="utf-8") as f:

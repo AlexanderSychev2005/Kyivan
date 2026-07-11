@@ -87,19 +87,20 @@ _DELETE_RE = re.compile("[" + re.escape("".join(_DELETE_CHARS)) + "]")
 # legacy-GAP relics
 _LEGACY_GAP_RE = re.compile(r"___G[АA][РP]___")
 
+
 def normalize_historical_text(line: str) -> str:
     if not line:
         return ""
 
     text = unicodedata.normalize("NFC", line)
     text = text.replace("\ufeff", "").replace("\u200b", "")
-    
+
     # Residual PUA noise
     text = re.sub(r"[\ue000-\uf8ff]", "", text)
-    
+
     # Modern quotes
     text = re.sub(r'["\'«»„“”]', "", text)
-    
+
     # Remove standard diacritics (accents) but keep titlo (outside this range)
     text = re.sub(r"[\u0300-\u036f]", "", text)
 
@@ -118,7 +119,7 @@ def normalize_historical_text(line: str) -> str:
     text = _DELETE_RE.sub(" ", text)
 
     # 5) Remove all punctuation except: letters, digits, _, spaces, brackets, +, :, ·, titlo (҃)
-    text = re.sub(r"[^\w\s:\[\]\(\)·+҃\-]", " ", text) # Also keeping hyphens
+    text = re.sub(r"[^\w\s:\[\]\(\)·+҃\-]", " ", text)  # Also keeping hyphens
 
     # 6) Compress spaces
     text = re.sub(r"\s+", " ", text).strip()

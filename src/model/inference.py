@@ -18,9 +18,14 @@ import json
 import re
 from typing import List
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
 import torch
-from config import KyivanConfig
-from model import Kyivan
+from src.model.config import KyivanConfig
+from src.model.model import Kyivan
+from src.data_pipeline.normalization import normalize_historical_text
 
 
 class KyivanRestorer:
@@ -96,6 +101,10 @@ class KyivanRestorer:
             str: The fully restored text sequence without special tokens.
         """
         print(f"\n--- ORIGINAL TEXT: {text} ---")
+
+        # 0. Normalize the text
+        text = normalize_historical_text(text)
+        print(f"\n--- NORMALIZED TEXT: {text} ---")
 
         # 1. Fast Tokenization
         # Split the string while preserving the structural integrity of special tags and masks

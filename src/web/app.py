@@ -15,6 +15,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 sys.path.append(str(Path(__file__).parent.parent / "model"))
 
 from src.model.model import Kyivan, KyivanConfig
+from src.data_pipeline.normalization import normalize_historical_text
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -86,9 +87,9 @@ def read_root():
 
 @app.post("/api/analyze")
 def analyze_text(req: AnalyzeRequest):
-    text = req.text
-
-    # 1. Tokenize input
+    # 1. Normalize and Tokenize input
+    text = normalize_historical_text(req.text)
+    
     tokens = ["[SOS]"]
     for char in text:
         if char == "?":

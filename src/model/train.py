@@ -658,6 +658,17 @@ def main() -> None:
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for reproducibility"
     )
+    
+    # Speed and Memory Optimizations
+    parser.add_argument(
+        "--torch_compile", action="store_true", help="Compile model via torch.compile (requires PyTorch 2.0+)"
+    )
+    parser.add_argument(
+        "--gradient_checkpointing", action="store_true", help="Enable gradient checkpointing to save VRAM"
+    )
+    parser.add_argument(
+        "--optim", type=str, default="adamw_torch", help="Optimizer to use (e.g. adamw_bnb_8bit)"
+    )
 
     parser.add_argument(
         "--report_test_a", action="store_true", help="Generate CSV report for Test A"
@@ -747,6 +758,9 @@ def main() -> None:
         weight_decay=0.01,
         max_grad_norm=1.0,
         dataloader_num_workers=4,
+        gradient_checkpointing=args.gradient_checkpointing,
+        torch_compile=args.torch_compile,
+        optim=args.optim,
         report_to=[],
         label_names=["labels", "unk_labels", "date_labels", "region_labels"],
         load_best_model_at_end=True,

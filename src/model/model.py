@@ -169,10 +169,8 @@ class BertSelfAttentionWithRoPE(BertSelfAttention):
             encoder_attention_mask (Optional[torch.Tensor]): Used in cross-attention (not applicable here).
             past_key_value (Optional[Tuple[torch.Tensor]]): Cached key and value states.
             output_attentions (bool): Whether or not to return the attentions tensors.
-
-        Returns:
-            Tuple[torch.Tensor, ...]: Tuple containing the context layer and optionally the attention probabilities.
         """
+        output_attentions = getattr(self.config, "output_attentions", output_attentions) or kwargs.get("output_attentions", output_attentions)
         mixed_query_layer = self.query(hidden_states)
         key_layer = self.transpose_for_scores(self.key(hidden_states))
         value_layer = self.transpose_for_scores(self.value(hidden_states))
@@ -199,6 +197,8 @@ class BertSelfAttentionWithRoPE(BertSelfAttention):
 
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
         attention_probs = self.dropout(attention_probs)
+        
+        self._last_attention = attention_probs
 
         context_layer = torch.matmul(attention_probs, value_layer)
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
@@ -340,11 +340,15 @@ class Kyivan(BertPreTrainedModel):
         sos_vectors = seq[:, 0, :]
         logits_date = self.date_head(sos_vectors)
         logits_region = self.region_head(sos_vectors)
+        
+        # Manually extract the attention from the last layer to bypass HF tuple dropping
+        last_attn = self.encoder.layer[-1].attention.self._last_attention
+        extracted_attentions = (last_attn,) if last_attn is not None else None
 
         return KyivanOutput(
             logits_restore=logits_restore,
             logits_unk=logits_unk,
             logits_date=logits_date,
             logits_region=logits_region,
-            attentions=enc_out.attentions,
+            attentions=extracted_attentions,
         )

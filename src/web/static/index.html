@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kyivan | AI Epigraphy Tool</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header class="py-4 px-6">
+        <div class="max-w-6xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <!-- Placeholder for future logo -->
+                <div style="font-size:1.5rem;font-weight:700;letter-spacing:0.12em">
+                    <span style="color:var(--cinnabar)">K</span>YIVAN
+                </div>
+                <div style="font-family:'Inter',sans-serif;font-size:0.7rem;letter-spacing:0.04em;color:var(--chainmail)" data-i18n="header_subtitle">
+                    ДРЕВНЕРУССКАЯ ЭПИГРАФИКА
+                </div>
+            </div>
+            
+            <div class="flex items-center">
+                <select id="lang-select" onchange="changeLanguage(this.value)" style="padding: 4px 8px; border-radius: 5px; border: 1px solid var(--birch-dark); background: var(--birch); font-family: Inter; font-size: 0.85rem; color: var(--charcoal); cursor: pointer;">
+                    <option value="ru">🇷🇺 Русский</option>
+                    <option value="en">🇬🇧 English</option>
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-6 main-grid">
+        
+        <!-- LEFT COLUMN (Input & Controls) -->
+        <div class="space-y-5">
+            <div>
+                <div class="section-label" data-i18n="desc_title">Исследуйте тексты</div>
+                <p style="font-size: 0.9rem; color: var(--charcoal); margin-bottom: 15px;" data-i18n="desc_text">
+                    Введите древнерусский текст. Используйте символ <strong>[-]</strong> на месте пропущенной буквы.
+                </p>
+            </div>
+
+            <!-- Controls (Examples) -->
+            <div class="mb-4">
+                <div class="section-label" data-i18n="ex_label">Примеры из грамот</div>
+                <select id="examples-select" onchange="loadExample()" style="width:100%; padding: 8px; border-radius: 5px; border: 1px solid var(--birch-dark); font-family: Inter;">
+                    <option value="" data-i18n="ex_default">-- Выбрать пример --</option>
+                    <option value="ex1" data-i18n="ex_1">Грамота №43 (одна буква)</option>
+                    <option value="ex2" data-i18n="ex_2">Грамота №109 (две буквы)</option>
+                    <option value="ex3" data-i18n="ex_3">Киевское письмо (лакуна)</option>
+                </select>
+            </div>
+
+            <!-- Temperature Slider -->
+            <div class="mb-4">
+                <div class="section-label" data-i18n="temp_label">Температура (креативность)</div>
+                <div class="flex items-center justify-between" style="font-size: 0.75rem; color: var(--chainmail); margin-bottom: 2px;">
+                    <span data-i18n="temp_formulaic">Формульная</span>
+                    <span data-i18n="temp_creative">Креативная</span>
+                </div>
+                <input type="range" id="temp-slider" min="0.1" max="2.0" step="0.1" value="1.0" style="width: 100%; accent-color: var(--cinnabar);" oninput="document.getElementById('temp-val').textContent = parseFloat(this.value).toFixed(1)">
+                <div class="text-center" style="font-size: 0.85rem; color: var(--charcoal); margin-top: 4px; font-weight: 500;" id="temp-val">1.0</div>
+            </div>
+
+            <!-- KEYBOARD -->
+            <div>
+                <div class="section-label" data-i18n="keyboard_label">Древнерусская клавиатура</div>
+                <div class="flex flex-wrap gap-1-5" id="virtualKeyboard"></div>
+            </div>
+
+            <!-- TEXTAREA -->
+            <div class="mt-4">
+                <textarea id="input-text" rows="8" placeholder="пошли мн? грамоту"></textarea>
+                <div class="text-right mt-1" style="color:var(--chainmail); font-size: 0.8rem;" id="charCount">0 / 1000</div>
+            </div>
+
+            <button class="btn-restore" id="analyze-btn" onclick="analyzeText()">
+                <span data-i18n="btn_analyze">Анализировать текст</span>
+            </button>
+        </div>
+
+        <!-- RIGHT COLUMN (Results) -->
+        <div class="results-panel">
+            <div class="res-title flex justify-between items-center">
+                <span data-i18n="res_title">Результаты анализа</span>
+                <div style="font-size: 0.7rem; color: var(--chainmail); text-transform: none; font-weight: 500; display: flex; align-items: center; gap: 5px;">
+                    <span data-i18n="attn_legend">Внимание модели:</span>
+                    <span class="inline-block w-3 h-3 rounded-sm" style="background-color: rgba(212, 163, 115, 0.2);"></span>
+                    <span class="inline-block w-3 h-3 rounded-sm" style="background-color: rgba(212, 163, 115, 0.5);"></span>
+                    <span class="inline-block w-3 h-3 rounded-sm" style="background-color: rgba(212, 163, 115, 0.9);"></span>
+                </div>
+            </div>
+
+            <div id="loading-spinner" class="hidden flex flex-col items-center justify-center py-16">
+                <div class="loader"></div>
+                <p style="font-size: 0.8rem; color: var(--chainmail);" data-i18n="loading">Анализируем текст...</p>
+            </div>
+            
+            <div id="error-message" class="hidden" style="color: var(--cinnabar); padding: 15px; border: 1px solid var(--cinnabar); border-radius: 8px; margin-bottom: 15px;"></div>
+
+            <div id="results-container" class="hidden">
+                <!-- Mode toggle for attention -->
+                <div class="mb-4 flex gap-3">
+                    <button id="mode-attr" class="kbd-btn" style="border-color: var(--cinnabar); color: var(--cinnabar);" onclick="switchAttentionMode('attr')" data-i18n="mode_attr">Внимание: Атрибутика</button>
+                    <button id="mode-rest" class="kbd-btn" onclick="switchAttentionMode('rest')" data-i18n="mode_rest">Внимание: Реставрация</button>
+                </div>
+
+                <div class="result-card" id="output-text">
+                    <!-- Text with attention highlights goes here -->
+                </div>
+
+                <!-- Classification Area -->
+                <div class="classify-card">
+                    <div class="section-label" data-i18n="region_label">Диалект / Регион</div>
+                    <div style="position: relative; height: 180px; width: 100%; display: flex; justify-content: center;">
+                        <canvas id="regionChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Date Histogram -->
+                <div class="classify-card">
+                    <div class="section-label flex justify-between">
+                        <span data-i18n="date_label">Датировка</span>
+                        <span id="best-date" style="color:var(--charcoal); font-weight: 600;">-</span>
+                    </div>
+                    <div class="hist-bar-wrap" id="date-histogram">
+                        <!-- Bars generated by JS -->
+                    </div>
+                </div>
+            </div>
+            
+            <div id="empty-state" class="text-center mt-8">
+                <p style="color:var(--chainmail); font-size: 0.9rem;" data-i18n="res_empty">
+                    Здесь появятся результаты восстановления и атрибутики текста.
+                </p>
+            </div>
+            
+        </div>
+    </main>
+
+    <!-- Tooltip -->
+    <div id="tooltip" class="tooltip hidden"></div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

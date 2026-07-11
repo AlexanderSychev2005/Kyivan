@@ -177,6 +177,10 @@ def main():
         dialect_str = doc.get("macro_dialect", "OES")
         dialect_id = DIALECT_MAP.get(dialect_str, 0)
 
+        # Create metadata without the massive full text to avoid MemoryError when duplicating across chunks
+        meta_doc = {k: v for k, v in doc.items() if k != "text"}
+        meta_json = json.dumps(meta_doc, ensure_ascii=False)
+
         chunks = chunk_text(text, max_len=1024, stride=512)
         for c in chunks:
             input_ids = tokenize_text(c, vocab)
@@ -189,7 +193,7 @@ def main():
                         "date_labels": date_target,
                         "region_labels": dialect_id,
                         "original_text": c,
-                        "metadata": json.dumps(doc, ensure_ascii=False)
+                        "metadata": meta_json
                     }
                 )
 
@@ -197,7 +201,7 @@ def main():
     print(f"Total chunks created for Train/Test A: {len(records)}")
 
     labels_strat = [r["region_labels"] for r in records]
-    print("Performing stratified Train/Test A split (90/10)...")
+    
     train_records, test_a_records = train_test_split(
         records, test_size=0.1, random_state=42, stratify=labels_strat
     )

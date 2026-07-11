@@ -2,6 +2,7 @@ import json
 import os
 import glob
 import re
+from normalization import normalize_historical_text
 
 BUCKETS_START = 800
 BUCKET_SIZE = 50
@@ -112,9 +113,8 @@ def process_datasets():
         with open(out_path, 'w', encoding='utf-8') as f_out:
             for doc in data:
                 text = doc.get('text', '')
-                # Clean up newlines and excessive spaces
-                text = re.sub(r'[\n\r]+', ' ', text)
-                text = re.sub(r'\s{2,}', ' ', text).strip()
+                # Apply advanced paleographic normalization
+                text = normalize_historical_text(text)
                 # Extract n-grams if this is RNC
                 if 'rnc_cleaned' in json_path:
                     global_rnc_ngrams.update(get_ngrams(text))

@@ -131,9 +131,6 @@ def process_datasets():
         ("pushkin_texts", "data/pushkin_texts/pushkin_texts.json"),
         ("torot", "data/TOROT/torot.json"),
         ("sofia", "data/sofia/sofia_cleaned.json"),
-        ("bible", "data/bible/bible_cleaned.json"),
-        ("bylini", "data/bylini/bylini_cleaned.json"),
-        ("ustav", "data/ustav/ustav_cleaned.json"),
     ]
 
     stats = {"CS": 0, "OES": 0, "NW": 0, "SW": 0, "Unknown": 0}

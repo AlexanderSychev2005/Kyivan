@@ -20,7 +20,7 @@ ROUND_PAT = re.compile(r"\(([^)]+)\)")
 SQUARE_PAT = re.compile(r"\[(?!(?:GAP|MASK|PAD|UNK|CLS|SEP|SOS|#|-)\]|CTX_)([^\]]+)\]")
 
 
-def chunk_text(text, max_len=1024, stride=512):
+def chunk_text(text, max_len=512, stride=256):
     chunks = []
     text_len = len(text)
     if text_len <= max_len:

@@ -92,8 +92,14 @@ def main():
             
         year_interval = parse_bulgarian_date(raw_date)
         
+        # doc_id is only unique within its section (textcorpus/chronograph
+        # each number their own docs from doc_1) -- prefix with section to
+        # avoid collisions like doc_28 existing in both.
+        section = doc.get('section', 'sofia')
+        raw_doc_id = doc.get('doc_id', 'unk')
+
         cleaned.append({
-            'doc_id': doc.get('doc_id', 'sofia_unk'),
+            'doc_id': f'{section}_{raw_doc_id}',
             'text': text,
             'year': year_interval,
             'dialect': 'CS',

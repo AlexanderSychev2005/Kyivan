@@ -23,123 +23,27 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-from config import KyivanConfig
+from .config import KyivanConfig
 from transformers import BertPreTrainedModel
 from transformers.models.bert.modeling_bert import BertEncoder, BertSelfAttention
 from transformers.utils.generic import ModelOutput
 
 
-def rotate_half(x: torch.Tensor) -> torch.Tensor:
-    """
-    Splits the last dimension of the tensor in half and applies a rotary transformation.
-    Transformation: [x1, x2] -> [-x2, x1].
-
-    Args:
-        x (torch.Tensor): Input tensor of shape (..., dim).
-
-    Returns:
-        torch.Tensor: The transformed tensor with rotated hidden dimensions.
-    """
-    x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
-    return torch.cat((-x2, x1), dim=-1)
-
-
-def apply_rotary_pos_emb(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    cos: torch.Tensor,
-    sin: torch.Tensor,
-    position_ids: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Applies Rotary Position Embeddings (RoPE) to the query and key tensors.
-
-    Args:
-        q (torch.Tensor): The query tensor.
-        k (torch.Tensor): The key tensor.
-        cos (torch.Tensor): The cached cosine frequencies tensor.
-        sin (torch.Tensor): The cached sine frequencies tensor.
-        position_ids (torch.Tensor): Tensor containing the sequential position indices.
-
-    Returns:
-        Tuple[torch.Tensor, torch.Tensor]: A tuple containing the rotated query and key tensors.
-    """
-    gather_indices = position_ids[:, None, :, None]
-    gather_indices = gather_indices.expand(-1, cos.shape[1], -1, cos.shape[3])
-
-    # Gather the appropriate cos/sin frequencies for the current sequence positions
-    cos = torch.gather(cos.expand(position_ids.shape[0], -1, -1, -1), 2, gather_indices)
-    sin = torch.gather(sin.expand(position_ids.shape[0], -1, -1, -1), 2, gather_indices)
-
-    # Apply the rotary transformation
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    return q_embed, k_embed
-
-
-class RotaryEmbedding(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        max_position_embeddings: int = 2048,
-        base: int = 10000,
-        device: Optional[torch.device] = None,
-    ):
-        super().__init__()
-        # Calculate inverse frequencies for the rotational matrix
-        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float().to(device) / dim))
-        self.register_buffer("inv_freq", inv_freq, persistent=False)
-        self.max_seq_len_cached = max_position_embeddings
-
-        # Pre-compute and cache cosine and sine values for the maximum expected sequence length
-        t = torch.arange(
-            self.max_seq_len_cached,
-            device=self.inv_freq.device,
-            dtype=self.inv_freq.dtype,
-        )
-        freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-        emb = torch.cat((freqs, freqs), dim=-1)
-        self.register_buffer(
-            "cos_cached", emb.cos()[None, None, :, :], persistent=False
-        )
-        self.register_buffer(
-            "sin_cached", emb.sin()[None, None, :, :], persistent=False
-        )
-
-    def forward(
-        self, x: torch.Tensor, seq_len: Optional[int] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Retrieves the cached sine and cosine embeddings for the current sequence length.
-        Dynamically computes them if the sequence exceeds the cached maximum.
-
-        Args:
-            x (torch.Tensor): Input tensor used for device and dtype reference.
-            seq_len (Optional[int]): The current sequence length.
-
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor]: Sliced cosine and sine tensors matching the sequence length.
-        """
-        if seq_len > self.max_seq_len_cached:
-            # Dynamic extension if the sequence length exceeds the cached maximum
-            t = torch.arange(seq_len, device=x.device, dtype=self.inv_freq.dtype)
-            freqs = torch.einsum("i,j->ij", t, self.inv_freq)
-            emb = torch.cat((freqs, freqs), dim=-1)
-            return emb.cos()[None, None, :, :], emb.sin()[None, None, :, :]
-
-        return (
-            self.cos_cached[:, :, :seq_len, ...],
-            self.sin_cached[:, :, :seq_len, ...],
-        )
+from transformers.models.llama.modeling_llama import LlamaRotaryEmbedding, apply_rotary_pos_emb
+from transformers.models.llama.configuration_llama import LlamaConfig
 
 
 # CUSTOM ATTENTION WITH RoPE
 class BertSelfAttentionWithRoPE(BertSelfAttention):
     def __init__(self, config: KyivanConfig):
         super().__init__(config)
-        self.rotary_emb = RotaryEmbedding(
-            dim=self.attention_head_size,
+        llama_config = LlamaConfig(
+            hidden_size=self.attention_head_size * self.num_attention_heads,
+            num_attention_heads=self.num_attention_heads,
             max_position_embeddings=config.max_position_embeddings,
+        )
+        self.rotary_emb = LlamaRotaryEmbedding(
+            config=llama_config,
         )
 
     def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
@@ -188,9 +92,9 @@ class BertSelfAttentionWithRoPE(BertSelfAttention):
         )
         position_ids = position_ids.unsqueeze(0).expand(hidden_states.shape[0], -1)
 
-        cos, sin = self.rotary_emb(value_layer, seq_len=seq_length)
+        cos, sin = self.rotary_emb(value_layer, position_ids)
         query_layer, key_layer = apply_rotary_pos_emb(
-            query_layer, key_layer, cos, sin, position_ids
+            query_layer, key_layer, cos, sin
         )
 
         # Standard Dot-Product Attention mechanism follows
@@ -341,9 +245,9 @@ class Kyivan(BertPreTrainedModel):
         # over-sharpening the softmax. Rescale by sqrt(hidden_size) (the bias
         # is a per-class shift, unaffected by this variance growth, so it's
         # added after).
-        logits_restore = (
-            x_res @ self.char_embeddings.weight.T
-        ) / math.sqrt(self.char_embeddings.weight.shape[-1]) + self.restore_bias
+        logits_restore = (x_res @ self.char_embeddings.weight.T) / math.sqrt(
+            self.char_embeddings.weight.shape[-1]
+        ) + self.restore_bias
         logits_unk = self.unk_head(seq)
 
         # Process global heads (applied exclusively to the [SOS] token at index 0)

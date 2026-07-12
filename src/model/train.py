@@ -346,11 +346,7 @@ class TestBEvalCallback(TrainerCallback):
                 trainer.log(formatted_metrics)
 
             fname = self.output_dir / f"eval_metrics_test_b_step{step}.json"
-            from utils.common import save_json
-
             save_json(metrics, fname)
-            from utils.logger import log
-
             log.info(f"Saved Test B metrics: {fname}")
         finally:
             self._in_eval = False
@@ -624,17 +620,17 @@ def main() -> None:
 
     parser.add_argument(
         "--dataset_dir",
-        default="novgorodets/artifacts/kyivan_dataset",
+        default="prepared_datasets/hf_dataset",
         help="Path to the arrow dataset",
     )
     parser.add_argument(
         "--char_vocab_path",
-        default="novgorodets/artifacts/char_tokenizer/char_vocab.json",
+        default="prepared_datasets/tokenizer/char_vocab.json",
         help="Path to char vocab",
     )
     parser.add_argument(
         "--output_dir",
-        default="novgorodets/artifacts/training_output",
+        default="training_output",
         help="Directory for checkpoints and logs",
     )
 

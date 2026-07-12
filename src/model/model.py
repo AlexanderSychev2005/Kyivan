@@ -336,7 +336,14 @@ class Kyivan(BertPreTrainedModel):
 
         # Process local sequence heads (applied to all tokens)
         x_res = self.restore_norm(self.restore_act(self.restore_dense(seq)))
-        logits_restore = x_res @ self.char_embeddings.weight.T + self.restore_bias
+        # Tied-embedding logits: the embedding matrix isn't scaled for use as
+        # an output projection, so raw hidden @ E^T grows with hidden_size,
+        # over-sharpening the softmax. Rescale by sqrt(hidden_size) (the bias
+        # is a per-class shift, unaffected by this variance growth, so it's
+        # added after).
+        logits_restore = (
+            x_res @ self.char_embeddings.weight.T
+        ) / math.sqrt(self.char_embeddings.weight.shape[-1]) + self.restore_bias
         logits_unk = self.unk_head(seq)
 
         # Process global heads (applied exclusively to the [SOS] token at index 0)

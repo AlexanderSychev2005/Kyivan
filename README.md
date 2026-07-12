@@ -15,14 +15,16 @@ The model is trained on a highly diverse, deduplicated collection of Old East Sl
 - **Sofia**: 154 documents from the Histdict database. These are primarily Old Bulgarian and Church Slavonic medieval manuscripts (e.g., gospels, chronographs, apocrypha, and hagiographic literature), providing a crucial bridge to South Slavic orthographic traditions.
 - **TOROT (Tromsø Old Russian and OCS Treebank)**: 39 major texts, including primary chronicles and historical literature.
 - **Pushkin Texts (Pushkin House / IRLI)**: 57 ancient manuscript texts from the archives of the Institute of Russian Literature (Pushkin House). This collection contains medieval Old Russian literature, chronicles, and ecclesiastical manuscripts notable for their authentic archaic orthography.
-- **Epigraphica**: 620 historical inscriptions and graffiti from ancient church walls (e.g., St. Sophia in Kyiv and Novgorod). These short, fragmentary texts include precise dating and are mapped directly to cleaned snippets. Crucially, they contain real archaeological lacunae, making them perfect for both training and generating Test B.
-- **Birchbark Letters**: Hundreds of everyday medieval letters etched on birch bark from Novgorod, Staraya Russa, Smolensk, and other ancient cities. They provide vital data on the colloquial Old Novgorodian dialect, business correspondence, and everyday spoken language of the era.
+- **Epigraphica**: 986 historical inscriptions and graffiti from ancient church walls (e.g., St. Sophia in Kyiv and Novgorod). These short, fragmentary texts include precise dating and are mapped directly to cleaned snippets. Crucially, they contain real archaeological lacunae, making them perfect for both training and generating Test B.
+- **Birchbark Letters**: 1,241 everyday medieval letters etched on birch bark from Novgorod, Staraya Russa, Smolensk, and other ancient cities. They provide vital data on the colloquial Old Novgorodian dialect, business correspondence, and everyday spoken language of the era.
+- **Ostrog Bible (1581)**: The first complete printed Bible in Church Slavonic, all 76 books, sourced from the historic Ostroh press. Unlike the fragmentary, lacuna-ridden sources above, this is complete, clean, and precisely dated text — each book kept whole as a single document — giving the model a large, reliably-dated anchor for the Church Slavonic dialect class.
 
 ### Final Data Splits (`prepared_datasets/hf_dataset`):
 The datasets are chunked (1024 chars, stride 512) and strictly separated to prevent data leakage:
-- **Train**: 22,752 chunks.
-- **Test A**: 2,528 chunks.
-- **Test B**: 1,188 textual segments containing **real historical lacunae** (brackets from archaeological transcriptions).
+- **Train**: 28,789 chunks.
+- **Eval**: 1,599 chunks.
+- **Test A**: 1,600 chunks.
+- **Test B**: 1,380 textual segments containing **real historical lacunae** (brackets from archaeological transcriptions).
 
 ---
 

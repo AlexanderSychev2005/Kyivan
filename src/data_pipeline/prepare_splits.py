@@ -228,51 +228,53 @@ def main():
     print(f"Test A chunks: {len(test_a_records)}")
 
     # ---------------------------------------------------------
-    # EXPORT METADATA JSON FOR TEST SPLITS
+    # EXPORT METADATA JSON FOR SPLITS
     # ---------------------------------------------------------
-    os.makedirs("test_eval_datasets", exist_ok=True)
-    print("Exporting rich JSON files for test splits to test_eval_datasets/...")
+    os.makedirs("human_readable_datasets", exist_ok=True)
+    print("Exporting rich JSON files for all splits to human_readable_datasets/...")
 
-    def clean_meta(meta):
-        meta.pop("date_target", None)
-        interval = meta.pop("date_interval", None)
-        if interval:
-            meta["date"] = f"{interval[0]} - {interval[1]}"
+    def clean_meta_for_raw(meta_raw):
+        meta = json.loads(meta_raw) if isinstance(meta_raw, str) else meta_raw
+        
+        # Determine range and dialect
+        date_str = "Unknown"
+        if "date_interval" in meta and meta["date_interval"]:
+            date_str = f"{meta['date_interval'][0]} - {meta['date_interval'][1]}"
         elif meta.get("date_number"):
-            meta["date"] = str(meta["date_number"])
-        return meta
+            date_str = str(meta["date_number"])
+            
+        dialect = meta.get("macro_dialect", "Unknown")
+        
+        # Return cleanly parsed meta without modifying it destructively if possible, but the prompt asked to store it.
+        # "хранить текст, диапазон, диалект, и просто в отдельном поле хранить все метаданные"
+        return date_str, dialect, meta
 
     def export_plain(records, out_name):
-        export = [
-            {
-                "original_text": r["original_text"],
-                "metadata": clean_meta(json.loads(r["metadata"])),
-            }
-            for r in records
-        ]
-        with open(f"test_eval_datasets/{out_name}.json", "w", encoding="utf-8") as f:
-            json.dump(export, f, ensure_ascii=False, indent=2)
+        with open(f"human_readable_datasets/{out_name}.jsonl", "w", encoding="utf-8") as f:
+            for r in records:
+                date_str, dialect, meta = clean_meta_for_raw(r["metadata"])
+                
+                export_obj = {
+                    "text": r.get("original_text", ""),
+                    "range": date_str,
+                    "dialect": dialect,
+                    "metadata": meta
+                }
+                if "text_with_missing" in r:
+                    export_obj["text_with_missing"] = r["text_with_missing"]
+                    
+                f.write(json.dumps(export_obj, ensure_ascii=False) + "\n")
 
+    export_plain(train_records, "train")
     export_plain(eval_records, "eval")
     export_plain(test_a_records, "test_a")
-
-    test_b_export = []
-    for r in test_b_records:
-        meta = clean_meta(json.loads(r["metadata"]))
-        test_b_export.append({
-            "original_text": r["original_text"],
-            "text_with_missing": r["text_with_missing"],
-            "metadata": meta
-        })
-
-    with open("test_eval_datasets/test_b.json", "w", encoding="utf-8") as f:
-        json.dump(test_b_export, f, ensure_ascii=False, indent=2)
+    export_plain(test_b_records, "test_b")
 
     # ---------------------------------------------------------
     # CREATE HF DATASET
     # ---------------------------------------------------------
     def strip_export_fields(recs):
-        allowed = {"input_ids", "attention_mask", "labels", "date_labels", "region_labels", "original_text", "metadata", "text_with_missing"}
+        allowed = {"input_ids", "attention_mask", "labels", "date_labels", "region_labels"}
         return [{k: v for k, v in r.items() if k in allowed} for r in recs]
 
     dataset_dict = DatasetDict(

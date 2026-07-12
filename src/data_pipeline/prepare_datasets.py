@@ -51,6 +51,7 @@ def get_macro_dialect(dataset_name, dialect_str, file_source=''):
         return 'CS'
     
     if dataset_name == 'epigraphica': return 'CS'
+    if dataset_name == 'bible_ostrog': return 'CS'
     if dataset_name == 'UD_Old_East_Slavic-Ruthenian': return 'SW'
     if dataset_name == 'birchbark': return 'NW'
     if dataset_name == 'UD_Old_East_Slavic-RNC': return 'OES'
@@ -80,6 +81,29 @@ def get_macro_dialect(dataset_name, dialect_str, file_source=''):
         return 'OES'
         
     return 'Unknown'
+_BB_DOT_RUN_RE = re.compile(r'·(?:\s*·)+')  # 2+ consecutive · = a run of lost letters
+_BB_HYPHEN_RE = re.compile(r'-+')  # birchbark also marks a lost letter with '-'
+
+
+def birchbark_gap_fix(text):
+    """birchbark's own diplomatic convention marks each illegible letter with
+    a raised dot or hyphen. A single '·' between legible words is ordinary
+    punctuation (by far the common case -- 2676 of ~2700 occurrences) and is
+    left alone; a run of 2+ is a deliberate letter count and becomes one gap,
+    same as an already-explicit [GAP]. Every '-' is a lost-letter marker."""
+    text = _BB_DOT_RUN_RE.sub('[GAP]', text)
+    text = _BB_HYPHEN_RE.sub('[GAP]', text)
+    while '[GAP][GAP]' in text or '[GAP] [GAP]' in text:
+        text = text.replace('[GAP][GAP]', '[GAP]').replace('[GAP] [GAP]', '[GAP]')
+    return text
+
+
+def visible_length(text):
+    """Length of text with whitespace stripped, counting each [UNK] gap
+    as a single character rather than the 5 chars of its literal spelling."""
+    return len(re.sub(r'\[UNK\]', '#', re.sub(r'\s+', '', text)))
+
+
 global_rnc_ngrams = set()
 
 def get_ngrams(text, n=5):
@@ -94,7 +118,8 @@ def process_datasets():
         ('UD_Old_East_Slavic-Ruthenian', 'data/UD_Old_East_Slavic-Ruthenian/ruthenian_cleaned.json'),
         ('pushkin_texts', 'data/pushkin_texts/pushkin_texts.json'),
         ('torot', 'data/TOROT/torot.json'),
-        ('sofia', 'data/sofia/sofia_cleaned.json')
+        ('sofia', 'data/sofia/sofia_cleaned.json'),
+        ('bible_ostrog', 'data/bible_ostrog/bible_ostrog.json')
     ]
     
     stats = {'CS': 0, 'OES': 0, 'NW': 0, 'SW': 0, 'Unknown': 0}
@@ -112,9 +137,14 @@ def process_datasets():
             
         with open(out_path, 'w', encoding='utf-8') as f_out:
             for doc in data:
-                text = doc.get('text', '')
-                # Apply advanced paleographic normalization
-                text = normalize_historical_text(text)
+                # epigraphica has no bare 'text' field -- it ships 'original'
+                # (diplomatic, with () [] restorations) and 'target' (the
+                # reconstructed reading); 'text' downstream is the latter.
+                text = doc.get('text', '') or doc.get('target', '')
+                # Apply advanced paleographic normalization; epigraphy keeps
+                # its () [] (genuine reconstructed text), everything else
+                # has stray brackets stripped.
+                text = normalize_historical_text(text, keep_brackets=(ds_name == 'epigraphica'))
                 # Extract n-grams if this is RNC
                 if 'rnc_cleaned' in json_path:
                     global_rnc_ngrams.update(get_ngrams(text))
@@ -125,6 +155,11 @@ def process_datasets():
                     # If NKRYA text shares at least 3 5-grams with RNC, we consider it a duplicate and drop it
                     if len(n_ngrams.intersection(global_rnc_ngrams)) >= 3:
                         continue
+
+                # Drop inscriptions/fragments too short to carry any signal
+                # ([UNK] gaps count as 1 char, not their 5-char spelling).
+                if ds_name in ('epigraphica', 'bible_ostrog') and visible_length(text) < 5:
+                    continue
 
                 raw_year = doc.get('year', '')
                 source = doc.get('source', '')
@@ -145,7 +180,11 @@ def process_datasets():
                     "category": doc.get('category', 'unknown'),
                     "original_dialect": dialect
                 }
-                
+                if 'original' in doc:
+                    new_doc['original'] = normalize_historical_text(doc['original'], keep_brackets=True)
+                if 'target' in doc:
+                    new_doc['target'] = normalize_historical_text(doc['target'], keep_brackets=True)
+
                 f_out.write(json.dumps(new_doc, ensure_ascii=False) + '\n')
                 stats[macro_dialect] += 1
                 
@@ -168,16 +207,53 @@ def process_datasets():
                 doc['date_target'] = target
                 if 'text' not in doc and 'target' in doc:
                     doc['text'] = doc['target']
-                    
-                # Clean up newlines in text and original/target if they exist
+
+                # Normalize + clean up newlines; birchbark keeps its () []
+                # (genuine reconstructed text).
                 for key in ['text', 'target', 'original', 'masked']:
                     if key in doc and isinstance(doc[key], str):
-                        doc[key] = re.sub(r'[\n\r]+', ' ', doc[key])
-                        doc[key] = re.sub(r'\s{2,}', ' ', doc[key]).strip()
-                
+                        doc[key] = normalize_historical_text(birchbark_gap_fix(doc[key]), keep_brackets=True)
+
+                if visible_length(doc.get('text', '')) < 5:
+                    continue
+
                 f_out.write(json.dumps(doc, ensure_ascii=False) + '\n')
                 stats[macro_dialect] += 1
         print(f"Prepared birchbark -> {out_path}")
+
+        # Same rows, flattened to the epigraphica_prepared.jsonl field layout
+        # (doc_id/text/macro_dialect/date_interval/date_target/date_number/
+        # category/original_dialect/original/target) instead of birchbark's
+        # own class-specific fields (masked/number/date/region/genre).
+        flat_out_path = 'prepared_datasets/birchbark_prepared.jsonl'
+        with open(birch_path, 'r', encoding='utf-8') as f, open(flat_out_path, 'w', encoding='utf-8') as f_out:
+            for line in f:
+                if not line.strip(): continue
+                doc = json.loads(line)
+
+                interval = doc.get('date_interval')
+                date_target = get_date_target(interval)
+                raw_date = doc.get('date', '')
+                original = normalize_historical_text(birchbark_gap_fix(doc.get('original', '')), keep_brackets=True)
+                target = normalize_historical_text(birchbark_gap_fix(doc.get('target', doc.get('original', ''))), keep_brackets=True)
+
+                if visible_length(target) < 5:
+                    continue
+
+                new_doc = {
+                    "doc_id": f"birchbark_{doc.get('number')}",
+                    "text": target,
+                    "macro_dialect": "NW",
+                    "date_interval": interval,
+                    "date_target": date_target,
+                    "date_number": raw_date if interval and interval[0] == interval[1] else None,
+                    "category": doc.get('category_mapped', doc.get('category', 'unknown')),
+                    "original_dialect": "birchbark",
+                    "original": original,
+                    "target": target,
+                }
+                f_out.write(json.dumps(new_doc, ensure_ascii=False) + '\n')
+        print(f"Prepared birchbark (flat) -> {flat_out_path}")
 
     # Process epigraphica Test B
     epi_brackets_path = 'data/epigraphica/epigraphica_final_cleaned_with_brackets.txt'
@@ -186,8 +262,11 @@ def process_datasets():
         with open(epi_brackets_path, 'r', encoding='utf-8') as f, open(out_path, 'w', encoding='utf-8') as f_out:
             for line in f:
                 if not line.strip(): continue
+                original = normalize_historical_text(line.strip(), keep_brackets=True)
+                if visible_length(original) < 5:
+                    continue
                 doc = {
-                    'original': line.strip(),
+                    'original': original,
                     'macro_dialect': 'CS',
                     'date_target': [0.0]*20
                 }

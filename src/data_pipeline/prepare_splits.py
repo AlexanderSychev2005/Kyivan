@@ -142,20 +142,24 @@ def collect_test_b(path, vocab, region_label, test_b_texts, test_b_records):
             if not res:
                 continue
             m_ids, labels, tgt_str, masked_str = res
-            test_b_records.append({
-                "input_ids": m_ids,
-                "attention_mask": [1] * len(m_ids),
-                "labels": labels,
-                "date_labels": doc.get("date_target", [0.0] * 20),
-                "region_labels": region_label,
-                "original_text": tgt_str,
-                "text_with_missing": masked_str,
-                "metadata": json.dumps(doc, ensure_ascii=False)
-            })
+            test_b_records.append(
+                {
+                    "input_ids": m_ids,
+                    "attention_mask": [1] * len(m_ids),
+                    "labels": labels,
+                    "date_labels": doc.get("date_target", [0.0] * 20),
+                    "region_labels": region_label,
+                    "original_text": tgt_str,
+                    "text_with_missing": masked_str,
+                    "metadata": json.dumps(doc, ensure_ascii=False),
+                }
+            )
 
 
 def main():
-    with open("prepared_datasets/tokenizer/char_vocab.json", "r", encoding="utf-8") as f:
+    with open(
+        "prepared_datasets/tokenizer/char_vocab.json", "r", encoding="utf-8"
+    ) as f:
         vocab = json.load(f)
 
     print("Extracting Test B from birchbarks and epigraphica...")
@@ -163,18 +167,24 @@ def main():
     test_b_texts = set()
 
     collect_test_b(
-        "prepared_datasets/epigraphica_prepared.jsonl", vocab, DIALECT_MAP["CS"],
-        test_b_texts, test_b_records,
+        "prepared_datasets/epigraphica_prepared.jsonl",
+        vocab,
+        DIALECT_MAP["CS"],
+        test_b_texts,
+        test_b_records,
     )
     collect_test_b(
-        "prepared_datasets/birchbark_prepared.jsonl", vocab, DIALECT_MAP["NW"],
-        test_b_texts, test_b_records,
+        "prepared_datasets/birchbark_prepared.jsonl",
+        vocab,
+        DIALECT_MAP["NW"],
+        test_b_texts,
+        test_b_records,
     )
 
     print(f"Extracted {len(test_b_records)} segments for Test B.")
 
     print("Loading final_dataset.jsonl...")
-    docs = list(load_data('prepared_datasets/final_dataset.jsonl'))
+    docs = list(load_data("prepared_datasets/final_dataset.jsonl"))
 
     records = []
     overlap_count = 0
@@ -205,7 +215,7 @@ def main():
                         "date_labels": date_target,
                         "region_labels": dialect_id,
                         "original_text": c,
-                        "metadata": meta_json
+                        "metadata": meta_json,
                     }
                 )
 
@@ -235,34 +245,36 @@ def main():
 
     def clean_meta_for_raw(meta_raw):
         meta = json.loads(meta_raw) if isinstance(meta_raw, str) else meta_raw
-        
+
         # Determine range and dialect
         date_str = "Unknown"
         if "date_interval" in meta and meta["date_interval"]:
             date_str = f"{meta['date_interval'][0]} - {meta['date_interval'][1]}"
         elif meta.get("date_number"):
             date_str = str(meta["date_number"])
-            
+
         dialect = meta.get("macro_dialect", "Unknown")
-        
+
         # Return cleanly parsed meta without modifying it destructively if possible, but the prompt asked to store it.
         # "хранить текст, диапазон, диалект, и просто в отдельном поле хранить все метаданные"
         return date_str, dialect, meta
 
     def export_plain(records, out_name):
-        with open(f"human_readable_datasets/{out_name}.jsonl", "w", encoding="utf-8") as f:
+        with open(
+            f"human_readable_datasets/{out_name}.jsonl", "w", encoding="utf-8"
+        ) as f:
             for r in records:
                 date_str, dialect, meta = clean_meta_for_raw(r["metadata"])
-                
+
                 export_obj = {
                     "text": r.get("original_text", ""),
                     "range": date_str,
                     "dialect": dialect,
-                    "metadata": meta
+                    "metadata": meta,
                 }
                 if "text_with_missing" in r:
                     export_obj["text_with_missing"] = r["text_with_missing"]
-                    
+
                 f.write(json.dumps(export_obj, ensure_ascii=False) + "\n")
 
     export_plain(train_records, "train")
@@ -274,7 +286,13 @@ def main():
     # CREATE HF DATASET
     # ---------------------------------------------------------
     def strip_export_fields(recs):
-        allowed = {"input_ids", "attention_mask", "labels", "date_labels", "region_labels"}
+        allowed = {
+            "input_ids",
+            "attention_mask",
+            "labels",
+            "date_labels",
+            "region_labels",
+        }
         return [{k: v for k, v in r.items() if k in allowed} for r in recs]
 
     dataset_dict = DatasetDict(
@@ -288,7 +306,7 @@ def main():
     if len(test_b_records) > 0:
         dataset_dict["test_b"] = Dataset.from_list(strip_export_fields(test_b_records))
 
-    out_dir = 'prepared_datasets/hf_dataset'
+    out_dir = "prepared_datasets/hf_dataset"
     print(f"Saving to {out_dir}...")
     dataset_dict.save_to_disk(out_dir)
     print("Done!")

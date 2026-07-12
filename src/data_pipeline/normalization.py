@@ -8,19 +8,31 @@ KEPT_TITLO = "҃"  # COMBINING CYRILLIC TITLO -- the one combining mark we keep
 # letter (a run of exactly 1) between/around Cyrillic text; a run of 2+ Latin
 # letters in a row is left untouched, since that's real Latin/foreign text.
 _LAT_TO_CYR = {
-    "A": "А", "a": "а",
-    "B": "В", "b": "в",
-    "E": "Е", "e": "е",
-    "K": "К", "k": "к",
-    "M": "М", "m": "м",
-    "H": "Н", "n": "н",
-    "O": "О", "o": "о",
-    "P": "Р", "p": "р",
-    "C": "С", "c": "с",
-    "T": "Т", "t": "т",
+    "A": "А",
+    "a": "а",
+    "B": "В",
+    "b": "в",
+    "E": "Е",
+    "e": "е",
+    "K": "К",
+    "k": "к",
+    "M": "М",
+    "m": "м",
+    "H": "Н",
+    "n": "н",
+    "O": "О",
+    "o": "о",
+    "P": "Р",
+    "p": "р",
+    "C": "С",
+    "c": "с",
+    "T": "Т",
+    "t": "т",
     "y": "у",
-    "x": "х", "X": "Х",
-    "i": "і", "I": "І",
+    "x": "х",
+    "X": "Х",
+    "i": "і",
+    "I": "І",
 }
 _LATIN_RUN_RE = re.compile(r"[A-Za-z]+")
 
@@ -41,13 +53,20 @@ def _fix_isolated_latin_homoglyphs(text: str) -> str:
 # (e.g. "агіоς"). NOT included: ѐ/ѝ/ѷ, which are genuine OCS/South Slavic
 # stress/orthographic marks still in active use in this corpus.
 _STRAY_DIACRITIC_MAP = {
-    "ӑ": "а", "Ӑ": "А",
-    "ӓ": "а", "Ӓ": "А",
-    "ӣ": "и", "Ӣ": "И",
-    "ӥ": "и", "Ӥ": "И",
-    "ӧ": "о", "Ӧ": "О",
-    "ӱ": "у", "Ӱ": "У",
-    "ı": "і", "İ": "І",
+    "ӑ": "а",
+    "Ӑ": "А",
+    "ӓ": "а",
+    "Ӓ": "А",
+    "ӣ": "и",
+    "Ӣ": "И",
+    "ӥ": "и",
+    "Ӥ": "И",
+    "ӧ": "о",
+    "Ӧ": "О",
+    "ӱ": "у",
+    "Ӱ": "У",
+    "ı": "і",
+    "İ": "І",
     "ς": "с",
 }
 _STRAY_DIACRITIC_RE = re.compile("[" + "".join(_STRAY_DIACRITIC_MAP) + "]")
@@ -102,7 +121,7 @@ _DELETE_CHARS = {
     "̈",
     "̴",
     "͘",
-    "\u200E",  # LRM
+    "\u200e",  # LRM
     "",
     "",
     "",
@@ -131,7 +150,9 @@ _UNDERSCORE_RE = re.compile(r"_+")
 # is a gap marker, same convention as birchbark's "·" runs.
 _HYPHEN_GAP_RE = re.compile(r"-(?:\s*-)+")
 _UNK_TOKEN = "[UNK]"
-_UNK_PLACEHOLDER = ""  # private-use codepoint, protects [UNK] from the bracket-structure pass below
+_UNK_PLACEHOLDER = (
+    ""  # private-use codepoint, protects [UNK] from the bracket-structure pass below
+)
 
 _EMPTY_BRACKET_RE = re.compile(r"\(\)|\[\]")
 _BRACKET_PAIRS = {")": "(", "]": "["}
@@ -261,7 +282,9 @@ def normalize_historical_text(line: str, keep_brackets: bool = False) -> str:
     text = _UNDERSCORE_RE.sub(_UNK_TOKEN, text)
     text = _HYPHEN_GAP_RE.sub(_UNK_TOKEN, text)
 
-    segments = [_normalize_segment(seg, keep_brackets) for seg in text.split(_UNK_TOKEN)]
+    segments = [
+        _normalize_segment(seg, keep_brackets) for seg in text.split(_UNK_TOKEN)
+    ]
     text = _UNK_TOKEN.join(segments)
 
     if keep_brackets:

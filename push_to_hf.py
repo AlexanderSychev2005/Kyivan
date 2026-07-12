@@ -40,7 +40,7 @@ def main():
     ds = load_from_disk(args.dataset_path)
 
     api = HfApi()
-    
+
     print(f"Pushing dataset to https://huggingface.co/datasets/{args.repo_id} ...")
     # Pushing dataset splits individually since test_b has 'labels' feature which the others don't
     for split_name, split_ds in ds.items():

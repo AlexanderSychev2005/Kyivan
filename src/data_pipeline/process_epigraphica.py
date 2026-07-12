@@ -1,85 +1,154 @@
 import csv
 import json
 import re
+import unicodedata
 
-def fingerprint(text):
-    # Keep only Cyrillic letters for matching
-    return re.sub(r'[^а-яА-ЯёЁѣꙋѧѳѡꙗєѕІѹꙑѯѥїѠѱӏѫѿꙅꙊꙖꙥѦѭѵѪѻѩӓѸЄ]', '', text).lower()
+GAP = '[GAP]'
 
-with open('data/epigraphica/epigraphica_full_data.csv', 'r', encoding='utf-8') as f:
-    reader = csv.DictReader(f)
-    csv_rows = list(reader)
+# Structural bookkeeping that leaks into the CSV 'text' column on
+# multi-inscription rows -- "Текст 1:"/"text 2" labels (Cyrillic or Latin
+# spelling), trailing "Доп. интерпретации" commentary, the "im."/"vac."
+# editorial abbreviations, and positional labels ("Лицевая сторона:",
+# "(левый столбец)"). None of this is inscription content.
+_ADDL_INTERP_RE = re.compile(r'Доп\.\s*интерпретации.*$', re.S)
+_TEXT_LABEL_RE = re.compile(r'(?i)(?:text|текст)\s*\d+\s*:?')
+_IM_RE = re.compile(r'(?i)\bim\.\s*')
+_VAC_RE = re.compile(r'(?i)\bvac\.\s*')
+_POSITION_LABEL_RE = re.compile(
+    r'(?i);?\(?(?:лицевая|оборотная)\s+сторона\)?\s*:?|'
+    r';?\(?(?:левый|правый)\s+столбец\)?\s*:?'
+)
 
-with open('data/epigraphica/epigraphica_final_cleaned.txt', 'r', encoding='utf-8') as f:
-    txt_lines = [line.strip() for line in f if line.strip()]
+# "⸗ =~ ̴" mark a word split across two inscribed lines (e.g. "Хр[GAP]⸗ стос"
+# is one word, "Христос"); join with no space rather than a word boundary.
+_LINE_BREAK_RE = re.compile(r'[⸗=~̴]\s*')
 
-dataset = []
-unmatched = 0
+_DASH = '\\-‐‑–—−'  # -, ‐, ‑, –, —, −
+# Bracket-wrapped illegible spans (dots, ellipsis, dash runs) collapse
+# straight to a bare gap.
+_WRAPPED_GAP_RE = re.compile(r'[\(\[][.…' + _DASH + r']+[\)\]]')
+# Bare ellipsis / 2+ dot runs / 2+ dash runs -> gap
+_BARE_GAP_RE = re.compile(r'…|\.{2,}|[' + _DASH + r']{2,}')
+# Any remaining lone dash (one illegible letter) -> gap
+_LONE_DASH_RE = re.compile(r'[' + _DASH + ']')
+# Normalize any malformed bracket nesting directly around a bare GAP token
+_STRAY_GAP_BRACKETS_RE = re.compile(r'\[*GAP\]*')
 
-for idx, line in enumerate(txt_lines):
-    clean_text = line.replace('[CTX_CHURCH]', '').strip()
-    # Replace GAP with UNK as per our standard
-    final_text = clean_text.replace('[GAP]', '[UNK]')
-    
-    fp_txt = fingerprint(clean_text)
-    
-    best_match = None
-    best_score = 0
-    
-    for row in csv_rows:
-        fp_csv = fingerprint(row['text'])
-        # Find Longest Common Subsequence or simple containment
-        if not fp_csv or not fp_txt:
+# () [] {} <> ⟦⟧ ⟨⟩ all mark restored/uncertain letters in this diplomatic
+# convention: kept in 'original', unwrapped (content kept) in 'target'.
+_BRACKET_CHARS_RE = re.compile(r'[\(\)\[\]\{\}<>⟦⟧⟨⟩]')
+
+
+def clean_labels(raw_text):
+    """Strip editorial bookkeeping that leaked into the 'text' column of
+    multi-inscription rows -- it is not part of any inscription."""
+    text = _ADDL_INTERP_RE.sub('', raw_text)
+    text = _TEXT_LABEL_RE.sub('', text)
+    text = _POSITION_LABEL_RE.sub('', text)
+    text = _IM_RE.sub('', text)
+    text = _VAC_RE.sub('', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+_SCRIPT_PREFIXES = ('CYRILLIC', 'GREEK', 'LATIN', 'GLAGOLITIC')
+
+
+def is_mostly_cyrillic(text):
+    """Whole inscriptions in Greek, Latin or Glagolitic graffiti do occur in
+    the corpus but aren't Cyrillic Slavic text; drop them rather than let
+    foreign letters pass through the (script-agnostic) normalizer untouched."""
+    counts = {p: 0 for p in _SCRIPT_PREFIXES}
+    for ch in text:
+        if not ch.isalpha():
             continue
-        
-        # simple heuristic: check how many characters from fp_txt are in fp_csv in order
-        if fp_txt in fp_csv or fp_csv in fp_txt:
-            best_match = row
-            break
-            
-    if not best_match:
-        # Fallback to Jaccard similarity of 3-grams
-        def ngrams(s, n=3):
-            return set(s[i:i+n] for i in range(len(s)-n+1))
-        
-        txt_grams = ngrams(fp_txt)
-        if txt_grams:
-            for row in csv_rows:
-                fp_csv = fingerprint(row['text'])
-                csv_grams = ngrams(fp_csv)
-                if not csv_grams: continue
-                
-                intersect = len(txt_grams & csv_grams)
-                union = len(txt_grams | csv_grams)
-                score = intersect / union if union > 0 else 0
-                
-                if score > best_score:
-                    best_score = score
-                    best_match = row
-                    
-    year = 'unknown'
-    doc_id = f'epigraphica_{idx}'
-    
-    if best_match:
-        year = best_match.get('date', 'unknown')
-        if not year.strip(): year = 'unknown'
-        row_id = best_match.get('\ufeffid', best_match.get('id', str(idx)))
-        doc_id = f'epigraphica_{row_id}'
-    else:
-        unmatched += 1
-        
-    dataset.append({
-        'doc_id': doc_id,
-        'text': final_text,
-        'dialect': 'epigraph',
-        'year': year,
-        'category': 'DAILY'
-    })
+        name = unicodedata.name(ch, '')
+        for prefix in _SCRIPT_PREFIXES:
+            if name.startswith(prefix):
+                counts[prefix] += 1
+                break
+    total = sum(counts.values())
+    if total == 0:
+        return True
+    return counts['CYRILLIC'] >= total * 0.5
 
-print(f'Total TXT lines: {len(txt_lines)}')
-print(f'Unmatched: {unmatched}')
 
-with open('data/epigraphica/epigraphica.json', 'w', encoding='utf-8') as f:
-    json.dump(dataset, f, ensure_ascii=False, indent=2)
+def collapse_duplicate_gaps(text):
+    while GAP + GAP in text or GAP + ' ' + GAP in text:
+        text = text.replace(GAP + GAP, GAP).replace(GAP + ' ' + GAP, GAP)
+    return text
 
-print('Saved to data/epigraphica/epigraphica.json')
+
+def build_original(raw_text):
+    """Diplomatic reading: keeps () [] {} <> ⟦⟧ ⟨⟩ around restored/uncertain
+    letters, collapses illegible spans (dash runs, ellipses) to a bare gap."""
+    text = _LINE_BREAK_RE.sub('', raw_text)
+    text = _WRAPPED_GAP_RE.sub(GAP, text)
+    text = _BARE_GAP_RE.sub(GAP, text)
+    text = _LONE_DASH_RE.sub(GAP, text)
+    text = _STRAY_GAP_BRACKETS_RE.sub(GAP, text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return collapse_duplicate_gaps(text)
+
+
+def build_target(original_text):
+    """Reconstructed reading: same as original but with the editorial
+    delimiters removed (their content is kept), gap markers left as-is."""
+    parts = original_text.split(GAP)
+    parts = [_BRACKET_CHARS_RE.sub('', p) for p in parts]
+    text = GAP.join(parts)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return collapse_duplicate_gaps(text)
+
+
+def main():
+    with open('data/epigraphica/epigraphica_full_data.csv', 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    dataset = []
+    skipped_empty = 0
+    skipped_non_cyrillic = 0
+
+    for row in rows:
+        raw_text = row['text'].strip()
+        if not raw_text:
+            skipped_empty += 1
+            continue
+
+        raw_text = clean_labels(raw_text)
+        if not raw_text:
+            skipped_empty += 1
+            continue
+
+        if not is_mostly_cyrillic(raw_text):
+            skipped_non_cyrillic += 1
+            continue
+
+        row_id = row.get('﻿id', row.get('id'))
+        year = row.get('date', '').strip() or 'unknown'
+
+        original = build_original(raw_text)
+        target = build_target(original)
+
+        dataset.append({
+            'doc_id': f'epigraphica_{row_id}',
+            'original': original,
+            'target': target,
+            'dialect': 'epigraph',
+            'year': year,
+            'category': 'DAILY',
+        })
+
+    print(f'Total CSV rows: {len(rows)}')
+    print(f'Skipped (empty text): {skipped_empty}')
+    print(f'Skipped (non-Cyrillic): {skipped_non_cyrillic}')
+    print(f'Written: {len(dataset)}')
+
+    with open('data/epigraphica/epigraphica.json', 'w', encoding='utf-8') as f:
+        json.dump(dataset, f, ensure_ascii=False, indent=2)
+
+    print('Saved to data/epigraphica/epigraphica.json')
+
+
+if __name__ == '__main__':
+    main()

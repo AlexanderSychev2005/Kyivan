@@ -272,7 +272,7 @@ def main():
     # CREATE HF DATASET
     # ---------------------------------------------------------
     def strip_export_fields(recs):
-        allowed = {"input_ids", "attention_mask", "labels", "date_labels", "region_labels"}
+        allowed = {"input_ids", "attention_mask", "labels", "date_labels", "region_labels", "original_text", "metadata", "text_with_missing"}
         return [{k: v for k, v in r.items() if k in allowed} for r in recs]
 
     dataset_dict = DatasetDict(

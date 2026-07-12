@@ -89,7 +89,7 @@ def read_root():
 def analyze_text(req: AnalyzeRequest):
     # 1. Normalize and Tokenize input
     text = normalize_historical_text(req.text)
-    
+
     tokens = ["[SOS]"]
     for char in text:
         if char == "?":

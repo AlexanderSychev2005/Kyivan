@@ -21,24 +21,24 @@ Usage:
 import argparse
 import json
 import logging
+import sys
 import unicodedata
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Union
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from datasets import load_from_disk
 from tqdm import tqdm
 
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from collator import KyivanPhysicalCollator
 from config import KyivanConfig
+
 from model import Kyivan
 
 logging.basicConfig(
@@ -48,8 +48,13 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # Region label index -> human-readable name
-REGION_NAMES = {0: "NW (North-Western/Novgorod)", 1: "SW (South-Western/Ruthenian)",
-                2: "OES (Old East Slavic)", 3: "CS (Church Slavonic)"}
+REGION_NAMES = {
+    0: "NW (North-Western/Novgorod)",
+    1: "SW (South-Western/Ruthenian)",
+    2: "OES (Old East Slavic)",
+    3: "CS (Church Slavonic)",
+}
+
 
 # Date bin index -> human-readable period (20 bins, 50 years each, 800-1800 AD)
 def bin_to_period(bin_idx: int) -> str:
@@ -75,14 +80,15 @@ def load_model(checkpoint_dir: str, device: torch.device) -> Kyivan:
     log.info(f"Loading model from {checkpoint_dir}...")
     config = KyivanConfig.from_pretrained(checkpoint_dir)
     model = Kyivan(config, num_date_bins=20, num_regions=4)
-    
+
     from safetensors.torch import load_file
+
     state_dict = load_file(Path(checkpoint_dir) / "model.safetensors")
     model.load_state_dict(state_dict, strict=False)
-    
+
     model.to(device)
     model.eval()
-    
+
     param_count = sum(p.numel() for p in model.parameters())
     log.info(f"  Loaded model with {param_count:,} parameters")
     return model
@@ -101,7 +107,9 @@ def mask_logits(logits: torch.Tensor, allowed_ids: set) -> torch.Tensor:
     """Mask out illegal tokens (special tags) from prediction logits."""
     vocab_size = logits.size(-1)
     allowed_mask = torch.zeros(vocab_size, dtype=torch.bool, device=logits.device)
-    allowed_idxs = torch.tensor(list(allowed_ids), dtype=torch.long, device=logits.device)
+    allowed_idxs = torch.tensor(
+        list(allowed_ids), dtype=torch.long, device=logits.device
+    )
     allowed_mask[allowed_idxs] = True
     masked = logits.clone()
     masked[..., ~allowed_mask] = -1e9
@@ -111,6 +119,7 @@ def mask_logits(logits: torch.Tensor, allowed_ids: set) -> torch.Tensor:
 # ============================================================================
 # TEST A EVALUATION: Dynamic masking + Restoration + Date + Region
 # ============================================================================
+
 
 def evaluate_test_a(
     model: Kyivan,
@@ -125,7 +134,7 @@ def evaluate_test_a(
 ) -> Dict[str, Any]:
     """
     Evaluate on Test A using dynamic masking from the collator.
-    
+
     Computes:
       - Restoration: Top-1/3/5 accuracy
       - Date: MAE in bins, MAE in years, exact bin accuracy
@@ -161,7 +170,7 @@ def evaluate_test_a(
         input_ids = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
         labels_restore = batch["labels"]  # [batch, seq_len]
-        date_labels = batch.get("date_labels", None)   # [batch, 20]
+        date_labels = batch.get("date_labels", None)  # [batch, 20]
         region_labels = batch.get("region_labels", None)  # [batch]
 
         with torch.no_grad():
@@ -202,19 +211,35 @@ def evaluate_test_a(
                 ids_list = input_ids[b].cpu().numpy().tolist()
                 ctx_start = max(0, pos - 20)
                 ctx_end = min(len(ids_list), pos + 21)
-                before = "".join(id_to_char.get(int(c), "?") for c in ids_list[ctx_start:pos])
-                after = "".join(id_to_char.get(int(c), "?") for c in ids_list[pos+1:ctx_end])
-                context = before + ">>>" + id_to_char.get(int(ids_list[pos]), "?") + "<<<" + after
+                before = "".join(
+                    id_to_char.get(int(c), "?") for c in ids_list[ctx_start:pos]
+                )
+                after = "".join(
+                    id_to_char.get(int(c), "?") for c in ids_list[pos + 1 : ctx_end]
+                )
+                context = (
+                    before
+                    + ">>>"
+                    + id_to_char.get(int(ids_list[pos]), "?")
+                    + "<<<"
+                    + after
+                )
 
                 probs = torch.softmax(logits_restore[b, pos], dim=-1)
                 top_chars = [id_to_char.get(int(tid), "?") for tid in top_ids[:5]]
 
-                rows.append({
-                    "sample_idx": start + b, "position": pos, "context": context,
-                    "true_char": true_char, "pred_char": pred_char,
-                    "is_correct": is_correct, "top1_prob": round(float(probs[pred_id].item()), 4),
-                    "top5_preds": "|".join(top_chars),
-                })
+                rows.append(
+                    {
+                        "sample_idx": start + b,
+                        "position": pos,
+                        "context": context,
+                        "true_char": true_char,
+                        "pred_char": pred_char,
+                        "is_correct": is_correct,
+                        "top1_prob": round(float(probs[pred_id].item()), 4),
+                        "top5_preds": "|".join(top_chars),
+                    }
+                )
 
         # --- Date ---
         if date_labels is not None:
@@ -289,6 +314,7 @@ def evaluate_test_a(
 # TEST B EVALUATION: Real historical lacunae
 # ============================================================================
 
+
 def evaluate_test_b(
     model: Kyivan,
     dataset: Any,
@@ -300,7 +326,7 @@ def evaluate_test_b(
 ) -> Dict[str, Any]:
     """
     Evaluate on Test B — real historical lacunae (pre-masked with known labels).
-    
+
     Computes:
       - Restoration: Top-1/3/5 accuracy on genuine archaeological gaps
       - CSV report with detailed per-lacuna predictions and context
@@ -326,7 +352,9 @@ def evaluate_test_b(
     for i in tqdm(range(total_samples), desc="Test B"):
         sample = dataset[i]
         input_ids = torch.tensor(sample["input_ids"], dtype=torch.long, device=device)
-        attention_mask = torch.tensor(sample["attention_mask"], dtype=torch.long, device=device)
+        attention_mask = torch.tensor(
+            sample["attention_mask"], dtype=torch.long, device=device
+        )
         labels = sample.get("labels", None)
 
         if labels is None:
@@ -371,21 +399,35 @@ def evaluate_test_b(
             # Context
             ctx_start = max(0, pos - 20)
             ctx_end = min(len(ids_list), pos + 21)
-            before = "".join(id_to_char.get(int(c), "?") for c in ids_list[ctx_start:pos])
-            after = "".join(id_to_char.get(int(c), "?") for c in ids_list[pos+1:ctx_end])
-            context = before + ">>>" + id_to_char.get(int(ids_list[pos]), "?") + "<<<" + after
+            before = "".join(
+                id_to_char.get(int(c), "?") for c in ids_list[ctx_start:pos]
+            )
+            after = "".join(
+                id_to_char.get(int(c), "?") for c in ids_list[pos + 1 : ctx_end]
+            )
+            context = (
+                before + ">>>" + id_to_char.get(int(ids_list[pos]), "?") + "<<<" + after
+            )
 
             probs = torch.softmax(logits[pos], dim=-1)
             top_chars = [id_to_char.get(int(tid), "?") for tid in top_ids[:5]]
-            true_rank = next((r + 1 for r, tid in enumerate(top_ids) if int(tid) == true_id), None)
+            true_rank = next(
+                (r + 1 for r, tid in enumerate(top_ids) if int(tid) == true_id), None
+            )
 
-            rows.append({
-                "sample_idx": i, "position": pos, "context": context,
-                "true_char": true_char, "pred_char": pred_char,
-                "is_correct": is_correct, "true_rank": true_rank,
-                "top1_prob": round(float(probs[pred_id].item()), 4),
-                "top5_preds": "|".join(top_chars),
-            })
+            rows.append(
+                {
+                    "sample_idx": i,
+                    "position": pos,
+                    "context": context,
+                    "true_char": true_char,
+                    "pred_char": pred_char,
+                    "is_correct": is_correct,
+                    "true_rank": true_rank,
+                    "top1_prob": round(float(probs[pred_id].item()), 4),
+                    "top5_preds": "|".join(top_chars),
+                }
+            )
 
         # Date & Region for this sample
         if "date_labels" in sample and sample["date_labels"] is not None:
@@ -455,6 +497,7 @@ def evaluate_test_b(
 # MAIN
 # ============================================================================
 
+
 def print_metrics_summary(test_name: str, metrics: Dict[str, Any]) -> None:
     """Pretty-print metrics to the console."""
     print(f"\n{'=' * 60}")
@@ -463,51 +506,82 @@ def print_metrics_summary(test_name: str, metrics: Dict[str, Any]) -> None:
 
     if "restoration" in metrics:
         r = metrics["restoration"]
-        print(f"\n  [Restoration]")
+        print("\n  [Restoration]")
         print(f"    Total predictions:   {r['total_predictions']}")
-        print(f"    Top-1 Accuracy:      {r['top1_accuracy']:.4f}  ({r['top1_accuracy']*100:.2f}%)")
-        print(f"    Top-3 Accuracy:      {r['top3_accuracy']:.4f}  ({r['top3_accuracy']*100:.2f}%)")
-        print(f"    Top-5 Accuracy:      {r['top5_accuracy']:.4f}  ({r['top5_accuracy']*100:.2f}%)")
+        print(
+            f"    Top-1 Accuracy:      {r['top1_accuracy']:.4f}  ({r['top1_accuracy'] * 100:.2f}%)"
+        )
+        print(
+            f"    Top-3 Accuracy:      {r['top3_accuracy']:.4f}  ({r['top3_accuracy'] * 100:.2f}%)"
+        )
+        print(
+            f"    Top-5 Accuracy:      {r['top5_accuracy']:.4f}  ({r['top5_accuracy'] * 100:.2f}%)"
+        )
 
     if "date" in metrics:
         d = metrics["date"]
-        print(f"\n  [Date Prediction]")
+        print("\n  [Date Prediction]")
         print(f"    Samples evaluated:   {d['total_samples']}")
         print(f"    Bin MAE:             {d['bin_mae']:.2f} bins")
         print(f"    Years MAE:           {d['years_mae']:.1f} years")
-        print(f"    Exact bin accuracy:  {d['exact_bin_accuracy']:.4f}  ({d['exact_bin_accuracy']*100:.2f}%)")
+        print(
+            f"    Exact bin accuracy:  {d['exact_bin_accuracy']:.4f}  ({d['exact_bin_accuracy'] * 100:.2f}%)"
+        )
 
     if "region" in metrics:
         rg = metrics["region"]
-        print(f"\n  [Region/Dialect Classification]")
+        print("\n  [Region/Dialect Classification]")
         print(f"    Samples evaluated:   {rg['total_samples']}")
-        print(f"    Overall accuracy:    {rg['accuracy']:.4f}  ({rg['accuracy']*100:.2f}%)")
+        print(
+            f"    Overall accuracy:    {rg['accuracy']:.4f}  ({rg['accuracy'] * 100:.2f}%)"
+        )
         if "per_class" in rg:
             for cls_name, cls_data in rg["per_class"].items():
-                print(f"      {cls_name}: {cls_data['accuracy']:.4f} ({cls_data['accuracy']*100:.1f}%)  [n={cls_data['count']}]")
+                print(
+                    f"      {cls_name}: {cls_data['accuracy']:.4f} ({cls_data['accuracy'] * 100:.1f}%)  [n={cls_data['count']}]"
+                )
 
     print(f"{'=' * 60}\n")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Kyivan Model Evaluation")
-    parser.add_argument("--checkpoint_dir", type=str, required=True,
-                        help="Path to the checkpoint directory")
-    parser.add_argument("--dataset_dir", type=str, default="prepared_datasets/hf_dataset",
-                        help="Path to the HF dataset on disk")
-    parser.add_argument("--char_vocab_path", type=str,
-                        default="prepared_datasets/tokenizer/char_vocab.json",
-                        help="Path to character vocabulary JSON")
-    parser.add_argument("--output_dir", type=str, default="evaluation_results",
-                        help="Directory for output metrics and CSV reports")
-    parser.add_argument("--batch_size", type=int, default=16,
-                        help="Batch size for Test A evaluation")
-    parser.add_argument("--skip_test_a", action="store_true",
-                        help="Skip Test A evaluation")
-    parser.add_argument("--skip_test_b", action="store_true",
-                        help="Skip Test B evaluation")
-    parser.add_argument("--device", type=str, default=None,
-                        help="Device to use (default: auto-detect)")
+    parser.add_argument(
+        "--checkpoint_dir",
+        type=str,
+        required=True,
+        help="Path to the checkpoint directory",
+    )
+    parser.add_argument(
+        "--dataset_dir",
+        type=str,
+        default="prepared_datasets/hf_dataset",
+        help="Path to the HF dataset on disk",
+    )
+    parser.add_argument(
+        "--char_vocab_path",
+        type=str,
+        default="prepared_datasets/tokenizer/char_vocab.json",
+        help="Path to character vocabulary JSON",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="evaluation_results",
+        help="Directory for output metrics and CSV reports",
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=16, help="Batch size for Test A evaluation"
+    )
+    parser.add_argument(
+        "--skip_test_a", action="store_true", help="Skip Test A evaluation"
+    )
+    parser.add_argument(
+        "--skip_test_b", action="store_true", help="Skip Test B evaluation"
+    )
+    parser.add_argument(
+        "--device", type=str, default=None, help="Device to use (default: auto-detect)"
+    )
     args = parser.parse_args()
 
     # Setup

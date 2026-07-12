@@ -5,4 +5,3 @@ hf_dataset
 evaluation_results
 novgorodets
 checkpoints
-test_eval_datasets/

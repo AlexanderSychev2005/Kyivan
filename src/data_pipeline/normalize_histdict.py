@@ -32,123 +32,124 @@ Pipeline (order matters):
 PRESERVED: the OCS / Old-Russian alphabet; Latin/Greek apparatus & parallels
 (manuscript sigla, sic, Greek source words) which are genuine editorial content.
 """
-import re
+
 import json
+import re
 import unicodedata
 
-KEPT_TITLO = "\u0483"   # COMBINING CYRILLIC TITLO -- the single titlo we keep
+KEPT_TITLO = "\u0483"  # COMBINING CYRILLIC TITLO -- the single titlo we keep
 
 # --- 1. PUA font decoding table (histdict). Full detail: pua_decoding.csv ---
 PUA_MAP = {
-    '\ue205': 'и',
-    '\ue20d': 'ч',
-    '\ue033': '',
-    '\ue201': 'ѥ',
-    '\ue010': '҃',
-    '\ue014': '҃',
-    '\ue012': '҃',
-    '\ue018': '',
-    '\ue031': '',
-    '\ue016': '',
-    '\ue215': 'ѹ',
-    '\ue342': '·',
-    '\ue204': 'ѥ',
-    '\ue017': '',
-    '\ue027': '',
-    '\ue343': '·',
-    '\ue02e': '',
-    '\ue21d': 'с',
-    '\ue223': 'ꙑ',
-    '\ue032': '',
-    '\ue344': '·',
-    '\ue100': '',
-    '\ue225': '·',
-    '\ue20c': 'ч',
-    '\ue221': 'ф',
-    '\ue340': '·',
-    '\ue213': 'ꙗ',
-    '\ue105': 'о',
-    '\ue21b': 'о',
-    '\ue347': '',
-    '\ue028': '',
-    '\ue209': 'ꙑ',
-    '\ue02c': '',
-    '\ue21c': 'с',
-    '\ue34a': '',
-    '\ue219': '',
-    '\ue349': '·',
-    '\ue019': '',
-    '\ue211': 'ѧ',
-    '\ue348': '·',
-    '\ue216': 'ѹ',
-    '\ue02f': '',
-    '\ue227': '·',
-    '\ue02d': '',
-    '\ue30d': '·',
-    '\ue114': 'з',
-    '\ue218': 'ѫ',
-    '\ue345': '',
-    '\ue346': '',
-    '\ue21f': 'ѥ',
-    '\ue106': '҃',
-    '\ue309': '',
-    '\ue002': '҃',
-    '\ue20b': 'о',
-    '\ue104': 'ъ',
-    '\ue101': 'и',
-    '\ue011': '҃',
-    '\ue208': 'ы',
-    '\ue28a': '',
-    '\uf025': '',
-    '\ue203': '҃',
-    '\ue10e': '',
-    '\ue212': '·',
-    '\uf021': '',
-    '\ue102': '',
-    '\uf076': '·',
-    '\uf080': '·'
+    "\ue205": "и",
+    "\ue20d": "ч",
+    "\ue033": "",
+    "\ue201": "ѥ",
+    "\ue010": "҃",
+    "\ue014": "҃",
+    "\ue012": "҃",
+    "\ue018": "",
+    "\ue031": "",
+    "\ue016": "",
+    "\ue215": "ѹ",
+    "\ue342": "·",
+    "\ue204": "ѥ",
+    "\ue017": "",
+    "\ue027": "",
+    "\ue343": "·",
+    "\ue02e": "",
+    "\ue21d": "с",
+    "\ue223": "ꙑ",
+    "\ue032": "",
+    "\ue344": "·",
+    "\ue100": "",
+    "\ue225": "·",
+    "\ue20c": "ч",
+    "\ue221": "ф",
+    "\ue340": "·",
+    "\ue213": "ꙗ",
+    "\ue105": "о",
+    "\ue21b": "о",
+    "\ue347": "",
+    "\ue028": "",
+    "\ue209": "ꙑ",
+    "\ue02c": "",
+    "\ue21c": "с",
+    "\ue34a": "",
+    "\ue219": "",
+    "\ue349": "·",
+    "\ue019": "",
+    "\ue211": "ѧ",
+    "\ue348": "·",
+    "\ue216": "ѹ",
+    "\ue02f": "",
+    "\ue227": "·",
+    "\ue02d": "",
+    "\ue30d": "·",
+    "\ue114": "з",
+    "\ue218": "ѫ",
+    "\ue345": "",
+    "\ue346": "",
+    "\ue21f": "ѥ",
+    "\ue106": "҃",
+    "\ue309": "",
+    "\ue002": "҃",
+    "\ue20b": "о",
+    "\ue104": "ъ",
+    "\ue101": "и",
+    "\ue011": "҃",
+    "\ue208": "ы",
+    "\ue28a": "",
+    "\uf025": "",
+    "\ue203": "҃",
+    "\ue10e": "",
+    "\ue212": "·",
+    "\uf021": "",
+    "\ue102": "",
+    "\uf076": "·",
+    "\uf080": "·",
 }
 
 # --- superscript combining Cyrillic letters (vynosnye bukvy) -> base letter ---
 SUP_MAP = {
-    'ⷭ': 'с',
-    'ⷦ': 'к',
-    'ⷪ': 'о',
-    'ⷶ': 'а',
-    'ⷢ': 'г',
-    'ⷱ': 'ч',
-    'ⷣ': 'д',
-    'ⷧ': 'л',
-    'ⷲ': 'ш',
-    'ⷨ': 'м',
-    'ⷮ': 'т',
-    'ⷬ': 'р',
-    'ꙸ': 'ъ',
-    'ⷠ': 'б',
-    'ꙷ': 'ѹ',
-    'ⷡ': 'в',
-    'ⷩ': 'н',
-    'ⷽ': 'ѧ',
-    'ⷤ': 'ж',
-    'ⷳ': 'щ',
-    'ⷴ': 'ѳ',
-    'ⷯ': 'х',
-    'ⷾ': 'ѫ',
-    'ⷫ': 'п',
-    'ⷷ': 'е',
-    'ⷥ': 'з',
-    'ⷰ': 'ц',
-    'ꙴ': 'є',
-    'ⷺ': 'ѣ',
-    'ꙵ': 'и',
-    'ⷹ': 'ѹ',
-    'ⷼ': 'ꙗ',
-    'ⷻ': 'ю',
-    'ꙹ': 'ы',
-    'ꙺ': 'ь',
-    'ꙶ': 'ї',
-    'ꙻ': 'ѡ',
-    'ⷵ': 'ст',
+    "ⷭ": "с",
+    "ⷦ": "к",
+    "ⷪ": "о",
+    "ⷶ": "а",
+    "ⷢ": "г",
+    "ⷱ": "ч",
+    "ⷣ": "д",
+    "ⷧ": "л",
+    "ⷲ": "ш",
+    "ⷨ": "м",
+    "ⷮ": "т",
+    "ⷬ": "р",
+    "ꙸ": "ъ",
+    "ⷠ": "б",
+    "ꙷ": "ѹ",
+    "ⷡ": "в",
+    "ⷩ": "н",
+    "ⷽ": "ѧ",
+    "ⷤ": "ж",
+    "ⷳ": "щ",
+    "ⷴ": "ѳ",
+    "ⷯ": "х",
+    "ⷾ": "ѫ",
+    "ⷫ": "п",
+    "ⷷ": "е",
+    "ⷥ": "з",
+    "ⷰ": "ц",
+    "ꙴ": "є",
+    "ⷺ": "ѣ",
+    "ꙵ": "и",
+    "ⷹ": "ѹ",
+    "ⷼ": "ꙗ",
+    "ⷻ": "ю",
+    "ꙹ": "ы",
+    "ꙺ": "ь",
+    "ꙶ": "ї",
+    "ꙻ": "ѡ",
+    "ⷵ": "ст",
 }
 
 # --- 2. combined char-translate table (PUA + superscripts) ---
@@ -160,7 +161,7 @@ for _ch, _b in SUP_MAP.items():
 _TRANS = {ord(k): (v if v != "" else None) for k, v in _translate.items()}
 
 # --- 3. diacritics / spacing marks / digits ---
-_SPACING_MARKS = {"\ua67f", "\u2e2f"}   # payerok, vertical tilde (omitted-jer)
+_SPACING_MARKS = {"\ua67f", "\u2e2f"}  # payerok, vertical tilde (omitted-jer)
 _DIGIT_RE = re.compile(r"\d+")
 
 # spacing modifier letters / stray marks to delete outright (erik, palatal apostrophe,
@@ -174,14 +175,27 @@ _TITLO_FOLD = {"\u0360", "\u035e", "\u0304", "\ua66f", "\u1dcd"}
 # --- 4. equivalence / whitespace unification ---
 _MIDDOT = "\u00b7"
 _EQUIV = {
-    "\u04f9": "\u044b", "\u04e5": "\u0438", "\u04f3": "\u0443", "\u04f1": "\u0443",
-    "\u04d3": "\u0430", "\u04e7": "\u043e",
+    "\u04f9": "\u044b",
+    "\u04e5": "\u0438",
+    "\u04f3": "\u0443",
+    "\u04f1": "\u0443",
+    "\u04d3": "\u0430",
+    "\u04e7": "\u043e",
     "\u00ef": "\u0457",
     # stray Glagolitic letters used as Cyrillic substitutes
-    "\u2c54": "\u0454", "\u2c34": "\u0434",
-    "\u2022": _MIDDOT, "\u2e31": _MIDDOT, "\u2219": _MIDDOT, "\uf13f": _MIDDOT,
-    "\u00a0": " ", "\u2008": " ", "\u2007": " ", "\u202f": " ",
-    "\u2009": " ", "\t": " ", "_": " ",
+    "\u2c54": "\u0454",
+    "\u2c34": "\u0434",
+    "\u2022": _MIDDOT,
+    "\u2e31": _MIDDOT,
+    "\u2219": _MIDDOT,
+    "\uf13f": _MIDDOT,
+    "\u00a0": " ",
+    "\u2008": " ",
+    "\u2007": " ",
+    "\u202f": " ",
+    "\u2009": " ",
+    "\t": " ",
+    "_": " ",
 }
 _EQUIV_TRANS = {ord(k): v for k, v in _EQUIV.items()}
 
@@ -190,7 +204,7 @@ _MARKER_LINE = re.compile(
     r"^(?:"
     r"-?\d+[abcdrv]?-?"
     r"|-?\d+[\u0430\u0431\u0432\u0433\u0434]?-?"
-    r"|/{1,2}\d*[abcdrv\u0430\u0431]?/{0,2}"     # //67v, /68r/, //68r, bare //
+    r"|/{1,2}\d*[abcdrv\u0430\u0431]?/{0,2}"  # //67v, /68r/, //68r, bare //
     r"|[f\u043bF\u041b]\.\s*\d+[rv\u0430\u0431]?"
     r"|\d+"
     r")$"
@@ -208,17 +222,65 @@ _MULTISPACE = re.compile(r"[ ]{2,}")
 # blank-line-separated segment; the main text is medieval and never uses
 # these modern words/spellings).
 _BG_COMMENT_HINTS = (
-    "думата", "буквата", "буквите", "текстът", "текста е", "лигатур",
-    "препис", "червенослов", "реставрац", "грешка", "издание", "изданието",
-    "нормализаци", "задраскан", "изтрит", "възстанов", "не се чете",
-    "ркп.", "доб. по", "заглавието", "похвалн", "поучението", "празникът",
-    "паметта", "службата", "наставленията", "приписка", "липсва",
-    "е написан", "надписан", "пренесена", "огледално", "празен",
-    "в полето", "горното поле", "бележка",
-    "ff. ", "f. r", "f. v", "sqq.", "lege ", "scil. ", "sic pro",
-    "corr. ", "add. ", "om. ", "falso rep.", "recte ", "cf. ",
-    "infra in marg.", "signatura folii", "apud ", "pro ", "item in",
-    "verisimiliter", "originaliter", "Vind", "Cod", "Ss. patrum"
+    "думата",
+    "буквата",
+    "буквите",
+    "текстът",
+    "текста е",
+    "лигатур",
+    "препис",
+    "червенослов",
+    "реставрац",
+    "грешка",
+    "издание",
+    "изданието",
+    "нормализаци",
+    "задраскан",
+    "изтрит",
+    "възстанов",
+    "не се чете",
+    "ркп.",
+    "доб. по",
+    "заглавието",
+    "похвалн",
+    "поучението",
+    "празникът",
+    "паметта",
+    "службата",
+    "наставленията",
+    "приписка",
+    "липсва",
+    "е написан",
+    "надписан",
+    "пренесена",
+    "огледално",
+    "празен",
+    "в полето",
+    "горното поле",
+    "бележка",
+    "ff. ",
+    "f. r",
+    "f. v",
+    "sqq.",
+    "lege ",
+    "scil. ",
+    "sic pro",
+    "corr. ",
+    "add. ",
+    "om. ",
+    "falso rep.",
+    "recte ",
+    "cf. ",
+    "infra in marg.",
+    "signatura folii",
+    "apud ",
+    "pro ",
+    "item in",
+    "verisimiliter",
+    "originaliter",
+    "Vind",
+    "Cod",
+    "Ss. patrum",
 )
 # critical-apparatus line: "бы́въшхъ Z : би́вшихь K, M, S" (Latin sigla + colon)
 _APPARATUS_LINE = re.compile(r"[A-Z][a-z]?\s*:|:\s*[^:]*\b[A-Z][a-z]?\b")
@@ -233,8 +295,8 @@ _BIBLE_REF_LINE = re.compile(r"^[\u0400-\u04ff]{2,6}\.?\s?\d+\s?[.:]\s?\d+\.?$")
 # letter that cannot begin a word (jers/ery).  Ѿ/ѿ are excluded: they are
 # ambiguous between the preposition "отъ" (keep space) and the prefix "от-"
 # (no space) and would need a lexicon to resolve.
-_DROPCAP_EXCLUDE = {"\u047e", "\u047f"}          # Ѿ ѿ
-_NONINITIAL = "\u044a\u044c\u044b\ua651"          # ъ ь ы ꙑ
+_DROPCAP_EXCLUDE = {"\u047e", "\u047f"}  # Ѿ ѿ
+_NONINITIAL = "\u044a\u044c\u044b\ua651"  # ъ ь ы ꙑ
 
 
 def _is_editorial_segment(seg):
@@ -249,13 +311,13 @@ def _is_editorial_segment(seg):
     if any(h in low for h in _BG_COMMENT_HINTS):
         return True
     hits = sum(
-        1 for ln in head
+        1
+        for ln in head
         if _FOOTNOTE_LINE.match(ln)
         or _BIBLE_REF_LINE.match(ln)
         or (" : " in ln and _APPARATUS_LINE.search(ln))
     )
     return hits >= max(1, len(head) // 3)
-
 
 
 def drop_editorial_tail(content):
@@ -272,20 +334,20 @@ def drop_editorial_tail(content):
 
 # --- 0b. inline editorial marks & references ------------------------------
 _EDITORIAL_MARKS = re.compile(
-    r"\(\s*sic\s*!?\s*\)"                      # (sic), (sic!)
-    r"|\(\s*!\s*\)"                            # (!)
-    r"|/\s*[!?]\s*/"                           # /!/  /?/
+    r"\(\s*sic\s*!?\s*\)"  # (sic), (sic!)
+    r"|\(\s*!\s*\)"  # (!)
+    r"|/\s*[!?]\s*/"  # /!/  /?/
     r"|\(\s*(?:\d+\s*\u0440\u0435\u0434|\u0440\u0435\u0434\s*\d+)\s*\)"  # (19 ред), (ред 19), (ред1 )
-    r"|\(\s*\u0441\u0442\.\s*\d+\s*\)"         # (ст. 1836)
+    r"|\(\s*\u0441\u0442\.\s*\d+\s*\)"  # (ст. 1836)
     r"|(?<!\S)/{1,2}\d+[abcdrv\u0430\u0431]?/{0,2}(?!\S)"  # inline //3б, /12/
-    r"|\*"                                     # asterisks
+    r"|\*"  # asterisks
     r"|\b\d+\.\s*\d+[ab–-]*[ab]?\b"  # 13. 15a, 13. 15a-b, 13. 15a–b
     r"|(?:Слово)\s*№\s*\d+\b"  # Слово № 1
     r"|\(\s*\d+[A-Za-z\u0400-\u04ff]?\s*/\s*\d+[A-Za-z\u0400-\u04ff]?\s*\)"
     r"|<\s*(?:\d+\.?\s*)*\d+[a-c–\-]*[a-c]?\s*>"  # <0. 1>, <1. 1–3>
     r"|<\s*>"
     r"|\\",
-    flags=re.DOTALL
+    flags=re.DOTALL,
 )
 
 # inline modern-Bulgarian editorial remarks embedded in the source text
@@ -295,16 +357,46 @@ _INLINE_COMMENT_HINTS = (
     # Bulgarian editors' notes (modern vocabulary/spellings; the source text
     # -- incl. scribal colophons with "преписахъ", "преписа сѧ" -- never
     # uses these exact forms, so bare "препис(а)" must NOT be a hint here)
-    "възстановява", "възстановен", "се представят", "се привежда",
-    "преписвач", "преписи", "по преписа", "препис от", "др. препис",
-    "осн.препис", "осн. препис", "основния", "съкратената ред",
-    "разночетени", "изданието", "заглавие на", "заглавието", "няма заглавие",
-    "това заглавие", "чудесата на св", "страници", "нечетим", "лигатура",
-    "липсва", "липсват", "липсващите", "задраскан", "грешка",
-    "това се обозначава", "тук се", "спазва се", "правопис",
+    "възстановява",
+    "възстановен",
+    "се представят",
+    "се привежда",
+    "преписвач",
+    "преписи",
+    "по преписа",
+    "препис от",
+    "др. препис",
+    "осн.препис",
+    "осн. препис",
+    "основния",
+    "съкратената ред",
+    "разночетени",
+    "изданието",
+    "заглавие на",
+    "заглавието",
+    "няма заглавие",
+    "това заглавие",
+    "чудесата на св",
+    "страници",
+    "нечетим",
+    "лигатура",
+    "липсва",
+    "липсват",
+    "липсващите",
+    "задраскан",
+    "грешка",
+    "това се обозначава",
+    "тук се",
+    "спазва се",
+    "правопис",
     # Russian apparatus notes (doc_166--168 marginal descriptions)
-    "далее в", "миниатюра", "киноварью", "полуустав", "в ркп.",
-    "см. вар", "см. прим",
+    "далее в",
+    "миниатюра",
+    "киноварью",
+    "полуустав",
+    "в ркп.",
+    "см. вар",
+    "см. прим",
 )
 _PARENTHETICAL = re.compile(r"\(([^()]*)\)")
 _BRACKETED = re.compile(r"\[([^\[\]]*)\]")
@@ -315,9 +407,14 @@ def _drop_inline_comments(text):
     contain modern-Bulgarian (or Russian) editorial vocabulary; the medieval
     text itself never does.  Brackets WITHOUT such vocabulary are kept: they
     carry genuine reconstructed text."""
+
     def _cond(m):
-        return "" if any(h in m.group(1).casefold()
-                         for h in _INLINE_COMMENT_HINTS) else m.group(0)
+        return (
+            ""
+            if any(h in m.group(1).casefold() for h in _INLINE_COMMENT_HINTS)
+            else m.group(0)
+        )
+
     text = _PARENTHETICAL.sub(_cond, text)
     text = _BRACKETED.sub(_cond, text)
     kept = []
@@ -406,7 +503,8 @@ def strip_diacritics(text):
     combining marks except titlo; spacing jer-marks; digits."""
     text = "".join(KEPT_TITLO if c in _TITLO_FOLD else c for c in text)
     text = "".join(
-        c for c in text
+        c
+        for c in text
         if not (unicodedata.category(c) == "Mn" and c != KEPT_TITLO)
         and c not in _SPACING_MARKS
         and c not in _DELETE_CHARS
@@ -423,7 +521,7 @@ def unify(text):
     # ы
     text = re.sub("ьі", "ы", text)
     text = re.sub("ЬІ", "Ы", text)
-    text = re.sub("\u0483{2,}", "\u0483", text)   # collapse redundant titlos
+    text = re.sub("\u0483{2,}", "\u0483", text)  # collapse redundant titlos
     text = unicodedata.normalize("NFC", text)
     text = _MULTISPACE.sub(" ", text).strip()
     return text
@@ -455,6 +553,7 @@ def normalize_corpus(docs, content_key="content"):
 
 if __name__ == "__main__":
     import sys
+
     inp = sys.argv[1] if len(sys.argv) > 1 else "histdict_corpus.json"
     outp = sys.argv[2] if len(sys.argv) > 2 else "histdict_normalized.json"
     with open(inp, encoding="utf-8") as f:

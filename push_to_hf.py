@@ -1,5 +1,6 @@
 import argparse
 import os
+import json
 from datasets import load_from_disk
 from huggingface_hub import HfApi
 
@@ -50,12 +51,34 @@ def main():
         )
         
         print(f"Generating readable JSON for '{split_name}'...")
-        # Create a readable version by dropping tensor arrays
-        cols_to_remove = [c for c in ["input_ids", "attention_mask", "labels"] if c in split_ds.column_names]
-        readable_ds = split_ds.remove_columns(cols_to_remove)
         
-        json_path = f"prepared_datasets/{split_name}_readable.jsonl"
-        readable_ds.to_json(json_path, force_ascii=False)
+        out_dir = "human_readable_datasets"
+        os.makedirs(out_dir, exist_ok=True)
+        json_path = os.path.join(out_dir, f"{split_name}.jsonl")
+        
+        with open(json_path, "w", encoding="utf-8") as f:
+            for item in split_ds:
+                meta = json.loads(item["metadata"]) if "metadata" in item else {}
+                
+                # Extract nice date
+                date_str = "Unknown"
+                if "date_interval" in meta and meta["date_interval"]:
+                    date_str = f"{meta['date_interval'][0]} - {meta['date_interval'][1]}"
+                elif "date_number" in meta and meta["date_number"]:
+                    date_str = str(meta["date_number"])
+                
+                human_item = {
+                    "text": item.get("original_text", ""),
+                    "dialect": meta.get("macro_dialect", "Unknown"),
+                    "date": date_str,
+                    "doc_id": meta.get("doc_id", "Unknown"),
+                    "category": meta.get("category", "Unknown")
+                }
+                
+                if "text_with_missing" in item:
+                    human_item["text_with_missing"] = item["text_with_missing"]
+                    
+                f.write(json.dumps(human_item, ensure_ascii=False) + "\n")
         
         api.upload_file(
             path_or_fileobj=json_path,

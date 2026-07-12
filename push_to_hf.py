@@ -38,6 +38,8 @@ def main():
     print(f"Loading dataset from {args.dataset_path}...")
     ds = load_from_disk(args.dataset_path)
 
+    api = HfApi()
+    
     print(f"Pushing dataset to https://huggingface.co/datasets/{args.repo_id} ...")
     # Pushing dataset splits individually since test_b has 'labels' feature which the others don't
     for split_name, split_ds in ds.items():
@@ -46,10 +48,26 @@ def main():
         split_ds.push_to_hub(
             args.repo_id, config_name=config_name, split=split_name, token=args.token
         )
+        
+        print(f"Generating readable JSON for '{split_name}'...")
+        # Create a readable version by dropping tensor arrays
+        cols_to_remove = [c for c in ["input_ids", "attention_mask", "labels"] if c in split_ds.column_names]
+        readable_ds = split_ds.remove_columns(cols_to_remove)
+        
+        json_path = f"prepared_datasets/{split_name}_readable.jsonl"
+        readable_ds.to_json(json_path, force_ascii=False)
+        
+        api.upload_file(
+            path_or_fileobj=json_path,
+            path_in_repo=f"readable_texts/{split_name}.jsonl",
+            repo_id=args.repo_id,
+            repo_type="dataset",
+            token=args.token,
+        )
+        print(f"Uploaded readable texts for '{split_name}' to readable_texts/")
 
     # 2. Upload the tokenizer file to the same repository
     print(f"Pushing vocabulary file ({args.vocab_path}) to the same repo...")
-    api = HfApi()
     api.upload_file(
         path_or_fileobj=args.vocab_path,
         path_in_repo="tokenizer/char_vocab.json",

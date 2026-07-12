@@ -96,7 +96,62 @@ def process_test_b_line(line, vocab):
     if not valid_mask:
         return None
 
+    # The model's date/region heads always pool from position 0, and the
+    # collator always prepends [SOS] for train/eval/test_a -- test_b's
+    # pre-built input_ids must carry the same convention, or the model sees
+    # an out-of-distribution layout (wrong pooling token, shifted RoPE
+    # positions) whenever test_b is evaluated.
+    sos_id = vocab["[SOS]"]
+    masked_ids = [sos_id] + masked_ids
+    labels = [-100] + labels
+
     return masked_ids, labels, target_str, masked_str
+
+
+def _clean_text_b_target(text):
+    text = re.sub(r"[\n\r]+", " ", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
+def collect_test_b(path, vocab, region_label, test_b_texts, test_b_records):
+    """Every doc whose 'original' has a real () or [] must be excluded from
+    the general train/eval/test_a pool, whether or not we can also build a
+    usable masked test_b record from it (process_test_b_line's regex-based
+    masking can fail on edge cases like nested brackets). So the exclusion
+    text always comes from the pipeline's own canonical 'text'/'target'
+    field -- never from process_test_b_line's independently re-derived
+    target string, which can diverge from it (different whitespace
+    collapsing) and silently break the exact-match leak check."""
+    if not os.path.exists(path):
+        return
+
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            doc = json.loads(line)
+            original = doc.get("original")
+            if not original:
+                continue
+            if not (ROUND_PAT.search(original) or SQUARE_PAT.search(original)):
+                continue
+
+            canonical = _clean_text_b_target(doc.get("text", doc.get("target", "")))
+            if canonical:
+                test_b_texts.add(canonical)
+
+            res = process_test_b_line(original, vocab)
+            if not res:
+                continue
+            m_ids, labels, tgt_str, masked_str = res
+            test_b_records.append({
+                "input_ids": m_ids,
+                "attention_mask": [1] * len(m_ids),
+                "labels": labels,
+                "date_labels": doc.get("date_target", [0.0] * 20),
+                "region_labels": region_label,
+                "original_text": tgt_str,
+                "text_with_missing": masked_str,
+                "metadata": json.dumps(doc, ensure_ascii=False)
+            })
 
 
 def main():
@@ -107,57 +162,14 @@ def main():
     test_b_records = []
     test_b_texts = set()
 
-    # Epigraphica Test B
-    epigraphica_path = 'prepared_datasets/epigraphica_classes_prepared.jsonl'
-    if os.path.exists(epigraphica_path):
-        with open(epigraphica_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                doc = json.loads(line)
-                if 'original' in doc:
-                    res = process_test_b_line(doc['original'], vocab)
-                    if res:
-                        m_ids, labels, tgt_str, masked_str = res
-                        tgt_str_clean = re.sub(r'[\n\r]+', ' ', tgt_str)
-                        tgt_str_clean = re.sub(r'\s{2,}', ' ', tgt_str_clean).strip()
-                        test_b_texts.add(tgt_str_clean)
-                        test_b_records.append({
-                            'input_ids': m_ids,
-                            'attention_mask': [1] * len(m_ids),
-                            'labels': labels,
-                            'date_labels': doc.get('date_target', [0.0]*20),
-                            'region_labels': DIALECT_MAP['CS'],
-                            'original_text': tgt_str,
-                            'text_with_missing': masked_str,
-                            'metadata': json.dumps(doc, ensure_ascii=False)
-                        })
-
-    # Birchbark Test B
-    birchbark_path = "prepared_datasets/birchbark_classes_prepared.jsonl"
-    if os.path.exists(birchbark_path):
-        with open(birchbark_path, "r", encoding="utf-8") as f:
-            for line in f:
-                doc = json.loads(line)
-                if "original" in doc:
-                    res = process_test_b_line(doc["original"], vocab)
-                    if res:
-                        m_ids, labels, tgt_str, masked_str = res
-                        # Clean up target string similarly to how it was done for final_dataset
-                        tgt_str_clean = re.sub(r"[\n\r]+", " ", tgt_str)
-                        tgt_str_clean = re.sub(r"\s{2,}", " ", tgt_str_clean).strip()
-                        test_b_texts.add(tgt_str_clean)
-
-                        test_b_records.append(
-                            {
-                                "input_ids": m_ids,
-                                "attention_mask": [1] * len(m_ids),
-                                "labels": labels,
-                                "date_labels": doc.get("date_target", [0.0] * 20),
-                                "region_labels": DIALECT_MAP["NW"],
-                                "original_text": tgt_str,
-                                "text_with_missing": masked_str,
-                                "metadata": json.dumps(doc, ensure_ascii=False)
-                            }
-                        )
+    collect_test_b(
+        "prepared_datasets/epigraphica_prepared.jsonl", vocab, DIALECT_MAP["CS"],
+        test_b_texts, test_b_records,
+    )
+    collect_test_b(
+        "prepared_datasets/birchbark_prepared.jsonl", vocab, DIALECT_MAP["NW"],
+        test_b_texts, test_b_records,
+    )
 
     print(f"Extracted {len(test_b_records)} segments for Test B.")
 
@@ -201,12 +213,18 @@ def main():
     print(f"Total chunks created for Train/Test A: {len(records)}")
 
     labels_strat = [r["region_labels"] for r in records]
-    
-    train_records, test_a_records = train_test_split(
-        records, test_size=0.1, random_state=42, stratify=labels_strat
+
+    # 90% train / 5% eval / 5% test_a, stratified by macro_dialect throughout
+    # (two-stage: hold out 10% first, then split that in half).
+    train_records, holdout_records, _, holdout_labels = train_test_split(
+        records, labels_strat, test_size=0.1, random_state=42, stratify=labels_strat
+    )
+    eval_records, test_a_records = train_test_split(
+        holdout_records, test_size=0.5, random_state=42, stratify=holdout_labels
     )
 
     print(f"Train chunks: {len(train_records)}")
+    print(f"Eval chunks: {len(eval_records)}")
     print(f"Test A chunks: {len(test_a_records)}")
 
     # ---------------------------------------------------------
@@ -214,41 +232,39 @@ def main():
     # ---------------------------------------------------------
     os.makedirs("test_eval_datasets", exist_ok=True)
     print("Exporting rich JSON files for test splits to test_eval_datasets/...")
-    
-    test_a_export = []
-    for r in test_a_records:
-        meta = json.loads(r["metadata"])
+
+    def clean_meta(meta):
         meta.pop("date_target", None)
-        if "interval" in meta:
-            meta["date"] = f"{meta['interval'][0]} - {meta['interval'][1]}"
-            meta.pop("interval", None)
-        elif "year" in meta:
-            meta["date"] = str(meta["year"])
-            
-        test_a_export.append({
-            "original_text": r["original_text"],
-            "metadata": meta
-        })
-        
-    with open("test_eval_datasets/test_a.json", "w", encoding="utf-8") as f:
-        json.dump(test_a_export, f, ensure_ascii=False, indent=2)
-            
+        interval = meta.pop("date_interval", None)
+        if interval:
+            meta["date"] = f"{interval[0]} - {interval[1]}"
+        elif meta.get("date_number"):
+            meta["date"] = str(meta["date_number"])
+        return meta
+
+    def export_plain(records, out_name):
+        export = [
+            {
+                "original_text": r["original_text"],
+                "metadata": clean_meta(json.loads(r["metadata"])),
+            }
+            for r in records
+        ]
+        with open(f"test_eval_datasets/{out_name}.json", "w", encoding="utf-8") as f:
+            json.dump(export, f, ensure_ascii=False, indent=2)
+
+    export_plain(eval_records, "eval")
+    export_plain(test_a_records, "test_a")
+
     test_b_export = []
     for r in test_b_records:
-        meta = json.loads(r["metadata"])
-        meta.pop("date_target", None)
-        if "interval" in meta:
-            meta["date"] = f"{meta['interval'][0]} - {meta['interval'][1]}"
-            meta.pop("interval", None)
-        elif "year" in meta:
-            meta["date"] = str(meta["year"])
-            
+        meta = clean_meta(json.loads(r["metadata"]))
         test_b_export.append({
             "original_text": r["original_text"],
             "text_with_missing": r["text_with_missing"],
             "metadata": meta
         })
-        
+
     with open("test_eval_datasets/test_b.json", "w", encoding="utf-8") as f:
         json.dump(test_b_export, f, ensure_ascii=False, indent=2)
 
@@ -262,6 +278,7 @@ def main():
     dataset_dict = DatasetDict(
         {
             "train": Dataset.from_list(strip_export_fields(train_records)),
+            "eval": Dataset.from_list(strip_export_fields(eval_records)),
             "test_a": Dataset.from_list(strip_export_fields(test_a_records)),
         }
     )

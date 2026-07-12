@@ -170,6 +170,13 @@ def process_datasets():
                 interval = parse_year(raw_year)
                 target = get_date_target(interval)
                 
+                # Prevent massive CS/1581 imbalance by clearing labels on 90% of Bible
+                import random
+                if ds_name == 'bible_ostrog' and random.random() > 0.1:
+                    macro_dialect = "Unknown"
+                    target = [0.0] * 20
+                    interval = None
+                
                 new_doc = {
                     "doc_id": doc_id,
                     "text": text,

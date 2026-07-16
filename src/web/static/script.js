@@ -20,7 +20,10 @@ const dict = {
         mode_rest: "Внимание: Реставрация",
         region_label: "Диалект / Регион",
         date_label: "Датировка",
-        res_empty: "Здесь появятся результаты восстановления и атрибутики текста."
+        res_empty: "Здесь появятся результаты восстановления и атрибутики текста.",
+        unk_label: "Прогноз длины лакуны:",
+        unk_multi: "> 1 символа",
+        unk_single: "1 символ"
     },
     en: {
         desc_title: "Explore Texts",
@@ -43,7 +46,10 @@ const dict = {
         mode_rest: "Attention: Restoration",
         region_label: "Dialect / Region",
         date_label: "Dating",
-        res_empty: "Restoration and attribution results will appear here."
+        res_empty: "Restoration and attribution results will appear here.",
+        unk_label: "Gap size prediction:",
+        unk_multi: "> 1 character",
+        unk_single: "1 character"
     }
 };
 
@@ -243,8 +249,11 @@ function renderText() {
         const restData = currentResponse.restorations.find(t => t.token_index === i);
         
         if (restData) {
-            span.textContent = restData.top_k[0].char;
+            span.textContent = restData.is_unk ? "#" : restData.top_k[0].char;
             span.className = 'highlight-restored';
+            if (restData.is_unk) {
+                span.style.color = colors.cinnabar;
+            }
             
             span.onmouseenter = (e) => showTooltip(e, restData);
             span.onmouseleave = hideTooltip;
@@ -366,20 +375,46 @@ function renderDateHistogram(dateData) {
 const tooltip = document.getElementById('tooltip');
 
 function showTooltip(e, data) {
-    let html = '<table>';
-    data.top_k.forEach(item => {
-        const pct = (item.prob * 100).toFixed(1);
-        html += `
-            <tr>
-                <td style="font-weight:bold; font-size: 1.2em;">${item.char}</td>
-                <td style="width: 80px;">
-                    <div class="prob-bar" style="width: ${pct}%"></div>
-                </td>
-                <td style="color: rgba(255,255,255,0.7); font-size: 0.9em; text-align: right;">${pct}%</td>
-            </tr>
+    let html = '';
+    if (data.is_unk) {
+        const pctMulti = (data.prob_multi * 100).toFixed(1);
+        const pctSingle = (data.prob_single * 100).toFixed(1);
+        const d = dict[currentLang];
+        html = `
+            <div style="margin-bottom: 5px; font-weight: 500; font-size: 0.9em; color: var(--gold);">${d.unk_label}</div>
+            <table style="border-spacing: 0 4px; border-collapse: separate;">
+                <tr>
+                    <td style="font-weight:bold; font-size: 0.9em; padding-right: 10px;">${d.unk_multi}</td>
+                    <td style="width: 80px;">
+                        <div class="prob-bar" style="width: ${pctMulti}%; background-color: var(--cinnabar);"></div>
+                    </td>
+                    <td style="color: rgba(255,255,255,0.7); font-size: 0.9em; text-align: right; padding-left: 8px;">${pctMulti}%</td>
+                </tr>
+                <tr>
+                    <td style="font-weight:bold; font-size: 0.9em; padding-right: 10px;">${d.unk_single}</td>
+                    <td style="width: 80px;">
+                        <div class="prob-bar" style="width: ${pctSingle}%"></div>
+                    </td>
+                    <td style="color: rgba(255,255,255,0.7); font-size: 0.9em; text-align: right; padding-left: 8px;">${pctSingle}%</td>
+                </tr>
+            </table>
         `;
-    });
-    html += '</table>';
+    } else {
+        html = '<table style="border-spacing: 0 4px; border-collapse: separate;">';
+        data.top_k.forEach(item => {
+            const pct = (item.prob * 100).toFixed(1);
+            html += `
+                <tr>
+                    <td style="font-weight:bold; font-size: 1.2em; padding-right: 10px;">${item.char}</td>
+                    <td style="width: 80px;">
+                        <div class="prob-bar" style="width: ${pct}%"></div>
+                    </td>
+                    <td style="color: rgba(255,255,255,0.7); font-size: 0.9em; text-align: right; padding-left: 8px;">${pct}%</td>
+                </tr>
+            `;
+        });
+        html += '</table>';
+    }
     
     tooltip.innerHTML = html;
     tooltip.classList.remove('hidden');

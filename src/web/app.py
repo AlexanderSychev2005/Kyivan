@@ -88,7 +88,10 @@ def read_root():
 @app.post("/api/analyze")
 def analyze_text(req: AnalyzeRequest):
     # 1. Normalize and Tokenize input
-    text = normalize_historical_text(req.text)
+    # Protect special characters used by the web interface before normalization
+    text = req.text.replace("?", "[[QMARK]]").replace("#", "[[HASH]]")
+    text = normalize_historical_text(text)
+    text = text.replace("[[QMARK]]", "?").replace("[[HASH]]", "#")
 
     tokens = ["[SOS]"]
     for char in text:
@@ -100,6 +103,9 @@ def analyze_text(req: AnalyzeRequest):
             tokens.append(char)
 
     input_ids = [char_vocab.get(t, char_vocab.get("[UNK]")) for t in tokens]
+    # The checkpoint model might have a smaller vocab_size than the current char_vocab
+    input_ids = [tid if tid < model.config.vocab_size else char_vocab.get("[UNK]") for tid in input_ids]
+    
     input_tensor = torch.tensor([input_ids], dtype=torch.long, device=device)
     attention_mask = torch.ones_like(input_tensor, device=device)
 
@@ -110,6 +116,7 @@ def analyze_text(req: AnalyzeRequest):
         )
 
     logits_restore = outputs.logits_restore[0]  # (seq_len, vocab_size)
+    logits_unk = outputs.logits_unk[0]  # (seq_len, 2)
     logits_date = outputs.logits_date[0]  # (num_date_bins)
     logits_region = outputs.logits_region[0]  # (num_regions)
 
@@ -127,7 +134,7 @@ def analyze_text(req: AnalyzeRequest):
     # 4. Process Restorations
     restorations = []
     for idx, token_id in enumerate(input_ids):
-        if token_id in (MASK_TOKEN_ID, UNK_MASK_TOKEN_ID):
+        if token_id == MASK_TOKEN_ID:
             t = max(0.01, req.temperature)  # prevent division by zero
             probs = F.softmax(logits_restore[idx] / t, dim=0)
             topk_probs, topk_indices = torch.topk(probs, 5)
@@ -141,7 +148,20 @@ def analyze_text(req: AnalyzeRequest):
             restorations.append(
                 {
                     "token_index": idx,
+                    "is_unk": False,
                     "top_k": top_k_list,
+                    "attention": avg_attn[idx].tolist(),
+                }
+            )
+        elif token_id == UNK_MASK_TOKEN_ID:
+            probs = F.softmax(logits_unk[idx], dim=0)
+            
+            restorations.append(
+                {
+                    "token_index": idx,
+                    "is_unk": True,
+                    "prob_multi": probs[1].item(),
+                    "prob_single": probs[0].item(),
                     "attention": avg_attn[idx].tolist(),
                 }
             )

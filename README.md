@@ -4,7 +4,7 @@
 
 ---
 
-## 🏰 1. Data Assets
+## 1. Data Assets
 
 The model is trained on a highly diverse collection of Old East Slavic, Ruthenian, Novgorodian, and Church Slavonic corpora.
 
@@ -21,7 +21,7 @@ The model is trained on a highly diverse collection of Old East Slavic, Ruthenia
 
 ---
 
-## 🧠 2. Model Architecture
+## 2. Model Architecture
 
 The core architecture (`src/model/model.py`) is a customized Transformer Encoder with **Multi-Task Learning** capabilities:
 1. **MLM Head (Restoration)**: Predicts the exact missing character (`[-]`) based on context.

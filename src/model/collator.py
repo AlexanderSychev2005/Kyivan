@@ -34,6 +34,7 @@ class KyivanPhysicalCollator:
         span_mask_ratio: float = 0.2,
         span_geometric_p: float = 0.2,
         edge_prob: float = 0.1,
+        date_bins: int = 20,
     ) -> None:
         """
         Initializes the physical degradation collator.
@@ -44,6 +45,8 @@ class KyivanPhysicalCollator:
             span_mask_ratio (float): The proportion of masks that should become span lacunae `[#]`.
             span_geometric_p (float): Parameter for the geometric distribution determining span length.
             edge_prob (float): Probability of simulating a physical tear at the document's edges.
+            date_bins (int): Width of the date-distribution placeholder used for
+                examples with no date label (must match the model's num_date_bins).
 
         Returns:
             None
@@ -58,6 +61,7 @@ class KyivanPhysicalCollator:
         self.span_mask_ratio = span_mask_ratio
         self.span_geometric_p = span_geometric_p
         self.edge_prob = edge_prob
+        self.date_bins = date_bins
 
         # Special tokens that must remain intact (prevents breaking dialect tags or [SOS])
         self.special_ids = {
@@ -198,11 +202,24 @@ class KyivanPhysicalCollator:
             "unk_labels": t_labels_unk,
         }
 
-        # Handle Metadata (Dates and Regions) gracefully if they exist in the dataset
-        if "date_labels" in features[0] and features[0]["date_labels"] is not None:
-            batch["date_labels"] = torch.tensor(
-                [f["date_labels"] for f in features], dtype=torch.float
-            )
+        # Handle Metadata (Dates and Regions) gracefully if they exist in the dataset.
+        # date_labels may be None per-example (e.g. Ostrog Bible chunks with the
+        # date tag deliberately withheld) -- unlike region_labels, KLDivLoss has
+        # no built-in ignore_index, so missing entries get a zero placeholder
+        # plus a companion date_labels_mask for compute_loss/compute_metrics to
+        # exclude them explicitly.
+        if "date_labels" in features[0]:
+            date_vals, date_mask = [], []
+            for f in features:
+                d = f.get("date_labels")
+                if d is None:
+                    date_vals.append([0.0] * self.date_bins)
+                    date_mask.append(0.0)
+                else:
+                    date_vals.append(d)
+                    date_mask.append(1.0)
+            batch["date_labels"] = torch.tensor(date_vals, dtype=torch.float)
+            batch["date_labels_mask"] = torch.tensor(date_mask, dtype=torch.float)
 
         if "region_labels" in features[0]:
             regions = [

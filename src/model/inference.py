@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 import torch
 from src.model.config import KyivanConfig
 from src.model.model import Kyivan
+from src.model.vocab_categories import is_maskable_char
 from src.data_pipeline.normalization import normalize_historical_text
 
 
@@ -68,6 +69,16 @@ class KyivanRestorer:
             if k.startswith("[") and k.endswith("]")
         }
 
+        # Punctuation/digits are never valid restoration predictions either --
+        # only letters and spaces may fill a `[-]` mask. Shares its policy
+        # (vocab_categories.MASKABLE_CATEGORIES) with collator_v2's
+        # maskable_ids and train.py's ALLOWED_PRED_IDS.
+        self.forbidden_restore_ids = set(self.special_ids) | {
+            v
+            for k, v in self.char_vocab.items()
+            if len(k) == 1 and not is_maskable_char(k)
+        }
+
         # Load configuration and model weights
         config = KyivanConfig.from_pretrained(model_dir)
         self.model = Kyivan.from_pretrained(model_dir, config=config).to(self.device)
@@ -95,7 +106,7 @@ class KyivanRestorer:
         extracts attention weights for interpretability.
 
         Args:
-            text (str): The corrupted input string (e.g., "[SOS] [CTX_DAILY] а се покл[#]е").
+            text (str): The corrupted input string (e.g., "[SOS] а се покл[#]е").
             max_steps (int): A safety limit for the maximum number of decoding iterations.
 
         Returns:
@@ -110,7 +121,7 @@ class KyivanRestorer:
         # 1. Fast Tokenization
         # Split the string while preserving the structural integrity of special tags and masks
         tokens = []
-        parts = re.split(r"(\[CTX_[A-Z_]+\]|\[-\]|\[#\]|\[SOS\])", text)
+        parts = re.split(r"(\[-\]|\[#\]|\[SOS\])", text)
 
         for part in parts:
             if not part:
@@ -118,8 +129,13 @@ class KyivanRestorer:
             if part.startswith("[") and part.endswith("]"):
                 tokens.append(self.char_vocab.get(part, self.char_vocab["[UNK]"]))
             else:
+                # Vocab is lowercase-only (see build_char_tokenizer.py) --
+                # fold here too, or any uppercase input character would
+                # miss the vocab and silently become [UNK].
                 for ch in part:
-                    tokens.append(self.char_vocab.get(ch, self.char_vocab["[UNK]"]))
+                    tokens.append(
+                        self.char_vocab.get(ch.lower(), self.char_vocab["[UNK]"])
+                    )
 
         # Ensure the global [SOS] token is present for multi-task heads
         if tokens[0] != self.sos_id:
@@ -181,8 +197,9 @@ class KyivanRestorer:
                     # Clone logits to avoid modifying the original tensor
                     mask_logits = logits_restore[i].clone()
 
-                    # Heavily penalize special tokens to prevent the model from generating them mid-word
-                    for sp_id in self.special_ids:
+                    # Heavily penalize special tokens and punctuation to prevent the model
+                    # from generating them mid-word as a restoration guess
+                    for sp_id in self.forbidden_restore_ids:
                         mask_logits[sp_id] = -float("inf")
 
                     probs = torch.softmax(mask_logits, dim=-1)
@@ -271,7 +288,7 @@ if __name__ == "__main__":
         "--text",
         type=str,
         required=True,
-        help="Corrupted text sequence. Example: '[SOS] [CTX_DAILY] а се покл[#]е'",
+        help="Corrupted text sequence. Example: '[SOS] а се покл[#]е'",
     )
     parser.add_argument(
         "--device", default="cpu", help="Compute device (e.g., cpu, cuda)"

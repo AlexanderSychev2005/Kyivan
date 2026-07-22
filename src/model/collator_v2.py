@@ -53,11 +53,15 @@ inject_missing_unk's own signature), span_mask_eval_len=10.
 """
 
 import random
-import unicodedata
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
+
+try:
+    from .vocab_categories import maskable_ids as compute_maskable_ids  # package-style import
+except ImportError:
+    from vocab_categories import maskable_ids as compute_maskable_ids  # script-mode import
 
 
 class KyivanPhysicalCollatorV2:
@@ -72,6 +76,7 @@ class KyivanPhysicalCollatorV2:
         span_mask_eval_len: int = 10,
         edge_prob: float = 0.1,
         mode: str = "train",
+        date_bins: int = 20,
     ) -> None:
         """
         Args:
@@ -90,6 +95,8 @@ class KyivanPhysicalCollatorV2:
             edge_prob: probability of a simulated physical edge tear, which
                 (if it fires) takes the place of the compressed gap.
             mode: 'train' or 'valid' -- selects the masking regime.
+            date_bins: width of the date-distribution placeholder used for
+                examples with no date label (must match the model's num_date_bins).
         """
         self.vocab = char_vocab
         self.pad_id = char_vocab["[PAD]"]
@@ -105,19 +112,18 @@ class KyivanPhysicalCollatorV2:
         self.span_mask_eval_len = span_mask_eval_len
         self.edge_prob = edge_prob
         self.mode = mode
+        self.date_bins = date_bins
 
         # Special (bracket-wrapped) tokens are always protected.
         self.special_ids = {
             v for k, v in char_vocab.items() if k.startswith("[") and k.endswith("]")
         }
-        # Only letters/spaces are maskable -- mirrors Aeneas excluding
-        # alphabet.punctuation from non_missing_idx and restricting
-        # random_mask_span's regex to letters + whitespace.
-        self.maskable_ids = {
-            int(v)
-            for k, v in char_vocab.items()
-            if len(k) == 1 and unicodedata.category(k) in ("Ll", "Lu", "Lo", "Zs")
-        }
+        # Only letters/spaces are maskable by default -- mirrors Aeneas
+        # excluding alphabet.punctuation from non_missing_idx and
+        # restricting random_mask_span's regex to letters + whitespace.
+        # See vocab_categories.MASKABLE_CATEGORIES for the shared policy
+        # (also used by train.py, inference.py, and prepare_splits.py).
+        self.maskable_ids = compute_maskable_ids(char_vocab)
 
     def _maskable_runs(self, tokens: List[int], excluded: set) -> List[tuple]:
         """Maximal (start, end) runs of maskable, non-excluded positions --
@@ -180,13 +186,18 @@ class KyivanPhysicalCollatorV2:
         candidates = [i for i in range(1, len(tokens)) if tokens[i] not in self.special_ids]
         if len(candidates) < span_len:
             return None
-        start_pos = random.randint(0, len(candidates) - span_len)
-        positions = candidates[start_pos : start_pos + span_len]
-        # Require contiguity in the original sequence (a real lacuna is a
-        # single physical gap, not scattered positions).
-        if positions[-1] - positions[0] != span_len - 1:
-            return None
-        return positions, span_len > 1
+        # A random slice of `candidates` isn't guaranteed contiguous in the
+        # original sequence (a special token may have been filtered out
+        # in between) -- a real lacuna must be one unbroken physical gap.
+        # Retry a bounded number of times instead of giving up on the first
+        # non-contiguous draw, so edge_prob/unk_geometric_p aren't
+        # under-realized on documents with mid-text special tokens.
+        for _ in range(50):
+            start_pos = random.randint(0, len(candidates) - span_len)
+            positions = candidates[start_pos : start_pos + span_len]
+            if positions[-1] - positions[0] == span_len - 1:
+                return positions, span_len > 1
+        return None
 
     def _process_one(self, tokens: List[int]) -> tuple:
         if tokens[0] != self.sos_id:
@@ -231,6 +242,14 @@ class KyivanPhysicalCollatorV2:
                         continue
                     span_budget_idx.extend(picked)
                     span_excluded.update(picked)
+
+                # Any span budget that couldn't be placed (e.g. too few
+                # long-enough maskable runs left) rolls over into the
+                # single-char budget instead of silently masking this
+                # example below the rate sampled above.
+                span_shortfall = mask_num_span - len(span_budget_idx)
+                if span_shortfall > 0:
+                    mask_num_char += span_shortfall
 
                 remaining_pool = [i for i in non_missing_idx if i not in span_excluded]
                 mask_num_char = min(mask_num_char, len(remaining_pool))
@@ -299,10 +318,23 @@ class KyivanPhysicalCollatorV2:
             "unk_labels": t_labels_unk,
         }
 
-        if "date_labels" in features[0] and features[0]["date_labels"] is not None:
-            batch["date_labels"] = torch.tensor(
-                [f["date_labels"] for f in features], dtype=torch.float
-            )
+        # date_labels may be None per-example (e.g. Ostrog Bible chunks with the
+        # date tag deliberately withheld) -- unlike region_labels, KLDivLoss has
+        # no built-in ignore_index, so missing entries get a zero placeholder
+        # plus a companion date_labels_mask for compute_loss/compute_metrics to
+        # exclude them explicitly.
+        if "date_labels" in features[0]:
+            date_vals, date_mask = [], []
+            for f in features:
+                d = f.get("date_labels")
+                if d is None:
+                    date_vals.append([0.0] * self.date_bins)
+                    date_mask.append(0.0)
+                else:
+                    date_vals.append(d)
+                    date_mask.append(1.0)
+            batch["date_labels"] = torch.tensor(date_vals, dtype=torch.float)
+            batch["date_labels_mask"] = torch.tensor(date_mask, dtype=torch.float)
 
         if "region_labels" in features[0]:
             regions = [

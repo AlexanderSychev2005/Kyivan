@@ -23,7 +23,11 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-from .config import KyivanConfig
+
+try:
+    from .config import KyivanConfig  # package-style import (e.g. inference.py)
+except ImportError:
+    from config import KyivanConfig  # script-mode import (e.g. train.py)
 from transformers import BertPreTrainedModel
 from transformers.models.bert.modeling_bert import BertEncoder, BertSelfAttention
 from transformers.utils.generic import ModelOutput
@@ -37,6 +41,10 @@ from transformers.models.llama.configuration_llama import LlamaConfig
 class BertSelfAttentionWithRoPE(BertSelfAttention):
     def __init__(self, config: KyivanConfig):
         super().__init__(config)
+        # Some transformers versions' BertSelfAttention.__init__ doesn't keep
+        # a `self.config` reference -- set it explicitly so forward() below
+        # doesn't depend on that varying by version.
+        self.config = config
         llama_config = LlamaConfig(
             hidden_size=self.attention_head_size * self.num_attention_heads,
             num_attention_heads=self.num_attention_heads,

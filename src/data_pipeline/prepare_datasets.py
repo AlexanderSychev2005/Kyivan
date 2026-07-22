@@ -10,14 +10,19 @@ NUM_BUCKETS = 20
 
 
 def get_date_target(interval):
+    # None (not an all-zero vector) for "no usable date" -- an all-zero
+    # vector looks like a real, valid target to prepare_splits.py/the
+    # collator (which only treats a literal None as "withhold this label"),
+    # so returning [0.0]*NUM_BUCKETS here would train/score the date head
+    # against a fake "definitely bin 0" answer for every undated document.
     if not interval:
-        return [0.0] * NUM_BUCKETS
+        return None
     start, end = interval
     start = max(BUCKETS_START, start)
     end = min(BUCKETS_START + NUM_BUCKETS * BUCKET_SIZE - 1, end)
 
     if start > end:
-        return [0.0] * NUM_BUCKETS
+        return None
 
     total_years = end - start + 1
     target = [0.0] * NUM_BUCKETS
@@ -157,6 +162,11 @@ def process_datasets():
         ("torot", "data/TOROT/torot.json"),
         ("sofia", "data/sofia/sofia_cleaned.json"),
         ("bible_ostrog", "data/bible_ostrog/bible_ostrog.json"),
+        # No date/dialect metadata -- get_macro_dialect falls back to
+        # "Unknown" and get_date_target(None) returns None for docs with no
+        # "dialect"/"year" keys, both correctly excluded from the
+        # date/region losses downstream rather than mislabeled.
+        ("byliny", "data/byliny/byliny.json"),
     ]
 
     stats = {"CS": 0, "OES": 0, "NW": 0, "SW": 0, "Unknown": 0}

@@ -77,6 +77,10 @@ _RARE_CHAR_MAP = {
     "×": "+",
     "ꙇ": "і",  # CYRILLIC LETTER IOTA -- positional allograph of і, folded for spelling normalization
     "Ꙇ": "І",
+    # LATIN LETTER VOICED LARYNGEAL SPIRANT -- homoglyph mis-encoding of
+    # Cyrillic dzelo/zelo (ѕ), seen used as the Cyrillic numeral for 6 in
+    # dates (e.g. "лѣто ᴤ҃ и҃ ф҃ п҃ в҃" alongside other letter-numerals).
+    "ᴤ": "ѕ",
     "⁘": ":",
     "⁙": ":",
     "⁞": ":",
@@ -132,6 +136,12 @@ _DELETE_CHARS = {
 _DELETE_RE = re.compile("[" + re.escape("".join(_DELETE_CHARS)) + "]")
 
 _QUOTE_RE = re.compile(r'["\'«»„“”‘’]')
+
+# OCR noise inserted mid-word (e.g. "ѻ³ч҃е" for "ѻч҃е", "ѿдалечеº" for
+# "ѿдалече") -- stripped with no trace, unlike _DELETE_CHARS below which
+# replaces with a space (correct for stray punctuation at word boundaries,
+# wrong here since it would split one word into two fake ones).
+_STRAY_MARK_RE = re.compile("[³º]")
 
 _STRAY_BRACKETS_RE = re.compile(r"[\[\]\(\)<>]")
 
@@ -228,6 +238,7 @@ def _normalize_segment(text: str, keep_brackets: bool) -> str:
     """Char-level canonicalization of a stretch of text that is guaranteed
     to contain no [UNK] marker (see normalize_historical_text)."""
     text = _QUOTE_RE.sub("", text)
+    text = _STRAY_MARK_RE.sub("", text)
     text = _fix_isolated_latin_homoglyphs(text)
     text = _STRAY_DIACRITIC_RE.sub(lambda m: _STRAY_DIACRITIC_MAP[m.group(0)], text)
 

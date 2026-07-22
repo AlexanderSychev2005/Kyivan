@@ -1,9 +1,20 @@
 import json
 import os
+import random
 import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from datasets import Dataset, DatasetDict
 from sklearn.model_selection import train_test_split
+
+# Shared with collator_v2's maskable_ids, train.py's ALLOWED_PRED_IDS, and
+# inference.py's forbidden_restore_ids, so Test B's real lacunae follow the
+# same masking policy as the training-time collator: punctuation is never
+# masked or scored as a restoration target.
+from src.model.vocab_categories import is_maskable_char as _is_maskable_char
 
 
 def load_data(path):
@@ -17,7 +28,7 @@ def load_data(path):
 
 DIALECT_MAP = {"OES": 0, "CS": 1, "NW": 2, "SW": 3}
 ROUND_PAT = re.compile(r"\(([^)]+)\)")
-SQUARE_PAT = re.compile(r"\[(?!(?:GAP|MASK|PAD|UNK|CLS|SEP|SOS|#|-)\]|CTX_)([^\]]+)\]")
+SQUARE_PAT = re.compile(r"\[(?!(?:GAP|MASK|PAD|UNK|SOS|#|-)\])([^\]]+)\]")
 
 
 def chunk_text(text, max_len=512, stride=256):
@@ -48,7 +59,12 @@ def tokenize_text(text, vocab):
                     tokens.append(vocab[special])
                     i = end + 1
                     continue
-        char = text[i]
+        # The vocab is lowercase-only (build_char_tokenizer.py case-folds
+        # when counting) -- fold here too, so an uppercase occurrence in raw
+        # text still resolves to its vocab entry instead of falling back to
+        # [UNK]. Stored text fields (original_text/text_with_missing) keep
+        # their original case; only the token ids are folded.
+        char = text[i].lower()
         if char in vocab:
             tokens.append(vocab[char])
         else:
@@ -72,7 +88,7 @@ def process_test_b_line(line, vocab):
 
     def replace_func(m):
         inner = m.group(1)
-        return "[-]" * len(inner)
+        return "".join("[-]" if _is_maskable_char(c) else c for c in inner)
 
     masked_str = ROUND_PAT.sub(replace_func, line)
     masked_str = SQUARE_PAT.sub(replace_func, masked_str)
@@ -186,6 +202,26 @@ def main():
     print("Loading final_dataset.jsonl...")
     docs = list(load_data("prepared_datasets/final_dataset.jsonl"))
 
+    # All 76 Ostrog Bible books share the exact same date (1581) and dialect
+    # (CS) label, and whole-book chunking blows that up into ~22% of all
+    # training chunks -- a huge, maximally homogeneous slice of the date/
+    # region training signal from one source. Risk: the date/region heads
+    # learn a shortcut ("this lexical fingerprint -> CS, 1581") instead of
+    # something that generalizes, rather than any genuine overfitting on the
+    # restoration task itself (which is unaffected either way, since the text
+    # stays in train regardless). Masked at the whole-book level (not per
+    # chunk) so every chunk of a given book is consistently labeled or not.
+    ostrog_ids = sorted(
+        doc["doc_id"] for doc in docs if doc["doc_id"].startswith("bible_ostrog_")
+    )
+    rng = random.Random(42)
+    n_masked = round(len(ostrog_ids) * 0.9)
+    masked_ostrog_ids = set(rng.sample(ostrog_ids, n_masked))
+    print(
+        f"Masking date/region labels for {len(masked_ostrog_ids)}/{len(ostrog_ids)} "
+        f"Ostrog Bible books (90%)."
+    )
+
     records = []
     overlap_count = 0
     for doc in docs:
@@ -195,9 +231,21 @@ def main():
             overlap_count += 1
             continue
 
-        date_target = doc.get("date_target", [0.0] * 20)
-        dialect_str = doc.get("macro_dialect", "OES")
-        dialect_id = DIALECT_MAP.get(dialect_str, 0)
+        if doc["doc_id"] in masked_ostrog_ids:
+            date_target = None
+            dialect_id = None
+        else:
+            # No defaults here: get_date_target already returns a real None
+            # (not [0.0]*20) for undated docs, and DIALECT_MAP.get(...)
+            # without a fallback returns None for both a missing
+            # macro_dialect and an unrecognized one (e.g. "Unknown", the
+            # catch-all get_macro_dialect returns for sources it doesn't
+            # know) -- both cases mean "no label", not "assume bin 0"/
+            # "assume OES", so they must reach the collator as None to be
+            # excluded from the date/region losses rather than silently
+            # mislabeled.
+            date_target = doc.get("date_target")
+            dialect_id = DIALECT_MAP.get(doc.get("macro_dialect"))
 
         # Create metadata without the massive full text to avoid MemoryError when duplicating across chunks
         meta_doc = {k: v for k, v in doc.items() if k != "text"}
@@ -222,7 +270,13 @@ def main():
     print(f"Excluded {overlap_count} documents due to Test B overlap.")
     print(f"Total chunks created for Train/Test A: {len(records)}")
 
-    labels_strat = [r["region_labels"] for r in records]
+    # -1 stands in for None (masked-label Ostrog chunks) purely so
+    # train_test_split's stratify can sort/compare classes; the real None
+    # stays untouched in records["region_labels"] itself.
+    labels_strat = [
+        r["region_labels"] if r["region_labels"] is not None else -1
+        for r in records
+    ]
 
     # 90% train / 5% eval / 5% test_a, stratified by macro_dialect throughout
     # (two-stage: hold out 10% first, then split that in half).

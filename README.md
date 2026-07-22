@@ -4,7 +4,7 @@
 
 ---
 
-## 🏰 1. Data Assets
+## 1. Data Assets
 
 The model is trained on a highly diverse collection of Old East Slavic, Ruthenian, Novgorodian, and Church Slavonic corpora.
 
@@ -18,10 +18,11 @@ The model is trained on a highly diverse collection of Old East Slavic, Ruthenia
 - **Epigraphica**: 986 historical inscriptions and graffiti from ancient church walls (e.g., St. Sophia in Kyiv and Novgorod). These short, fragmentary texts include precise dating and are mapped directly to cleaned snippets. Crucially, they contain real archaeological lacunae, making them perfect for both training and generating Test B.
 - **Birchbark Letters**: 1,241 everyday medieval letters etched on birch bark from Novgorod, Staraya Russa, Smolensk, and other ancient cities. They provide vital data on the colloquial Old Novgorodian dialect, business correspondence, and everyday spoken language of the era.
 - **Ostrog Bible (1581)**: The first complete printed Bible in Church Slavonic, all 76 books, sourced from the historic Ostroh press. Unlike the fragmentary, lacuna-ridden sources above, this is complete, clean, and precisely dated text — each book kept whole as a single document — giving the model a large, reliably-dated anchor for the Church Slavonic dialect class.
+- **Byliny**: 43 traditional Russian epic folk poems (bylinas), split across two transcription traditions (`novoya_zapis`/`staraya_zapis`). No date or dialect metadata exists for this source — these documents contribute restoration/lacuna training signal only and are excluded from the date/region losses (rather than being guessed and mislabeled).
 
 ---
 
-## 🧠 2. Model Architecture
+## 2. Model Architecture
 
 The core architecture (`src/model/model.py`) is a customized Transformer Encoder with **Multi-Task Learning** capabilities:
 1. **MLM Head (Restoration)**: Predicts the exact missing character (`[-]`) based on context.

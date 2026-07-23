@@ -152,11 +152,12 @@ async function analyzeText() {
 
     try {
         const temp = parseFloat(document.getElementById('temp-slider').value) || 1.0;
+        const isIterative = document.getElementById('iterative-toggle') ? document.getElementById('iterative-toggle').checked : false;
 
         const response = await fetch('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, temperature: temp })
+            body: JSON.stringify({ text, temperature: temp, iterative: isIterative })
         });
 
         if (!response.ok) {
@@ -249,7 +250,7 @@ function renderText() {
         const restData = currentResponse.restorations.find(t => t.token_index === i);
         
         if (restData) {
-            span.textContent = restData.is_unk ? "#" : restData.top_k[0].char;
+            span.textContent = restData.is_unk ? "#" : (restData.iterative_filled_char || restData.top_k[0].char);
             span.className = 'highlight-restored';
             if (restData.is_unk) {
                 span.style.color = colors.cinnabar;

@@ -1264,6 +1264,21 @@ def main() -> None:
     # Configure the number of date bins (20) and dialect regions (4) based on the dataset taxonomy
     model = Kyivan(config, num_date_bins=20, num_regions=4)
 
+    import torch
+    compute_cap = torch.cuda.get_device_capability() if torch.cuda.is_available() else (0, 0)
+    is_ampere = compute_cap[0] >= 8
+    
+    if is_ampere:
+        log.info("🚀 A100/Ampere architecture detected! Enabling BF16 and TF32.")
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        auto_bf16 = True
+        auto_fp16 = False
+    else:
+        log.info(f"🚀 Older architecture detected (Compute {compute_cap[0]}.{compute_cap[1]}). Enabling FP16.")
+        auto_bf16 = False
+        auto_fp16 = True
+
     n_params = sum(p.numel() for p in model.parameters())
     log.info(f"  Total params: {n_params:,}")
 
@@ -1313,12 +1328,14 @@ def main() -> None:
         learning_rate=args.lr,
         lr_scheduler_type="cosine",
         warmup_steps=args.warmup_steps,
-        fp16=args.fp16,
+        fp16=auto_fp16,
+        bf16=auto_bf16,
+        tf32=is_ampere,
         weight_decay=0.01,
         max_grad_norm=1.0,
         dataloader_num_workers=4,
         gradient_checkpointing=args.gradient_checkpointing,
-        torch_compile=args.torch_compile,
+        torch_compile=True,
         optim=args.optim,
         report_to=[],
         label_names=[

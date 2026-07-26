@@ -106,18 +106,30 @@ class BertSelfAttentionWithRoPE(BertSelfAttention):
         )
 
         # Standard Dot-Product Attention mechanism follows
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        if output_attentions:
+            attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+            attention_scores = attention_scores / math.sqrt(self.attention_head_size)
 
-        if attention_mask is not None:
-            attention_scores = attention_scores + attention_mask
+            if attention_mask is not None:
+                attention_scores = attention_scores + attention_mask
 
-        attention_probs = nn.functional.softmax(attention_scores, dim=-1)
-        attention_probs = self.dropout(attention_probs)
+            attention_probs = nn.functional.softmax(attention_scores, dim=-1)
+            attention_probs = self.dropout(attention_probs)
 
-        self._last_attention = attention_probs
+            self._last_attention = attention_probs
 
-        context_layer = torch.matmul(attention_probs, value_layer)
+            context_layer = torch.matmul(attention_probs, value_layer)
+        else:
+            self._last_attention = None
+            # Use PyTorch 2.0+ optimized SDPA (FlashAttention-2 / xFormers)
+            context_layer = torch.nn.functional.scaled_dot_product_attention(
+                query_layer,
+                key_layer,
+                value_layer,
+                attn_mask=attention_mask,
+                dropout_p=self.dropout.p if self.training else 0.0
+            )
+
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)

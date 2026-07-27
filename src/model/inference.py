@@ -11,6 +11,15 @@ a "Confidence-Based Search" approach:
 4. It iterates this process, using newly restored characters as context for harder masks.
 5. It extracts Self-Attention Saliency Maps from the final encoder layer to provide
    interpretability (showing exactly which context characters influenced the decision).
+
+Input syntax: bare `?` for one missing character, `#` for a lacuna of
+unknown length (e.g. "а се покл#е") -- no brackets, no `[SOS]`. `[-]`/`[#]`/
+`[SOS]` above refer to the model's internal vocab tokens that `?`/`#` get
+translated to, not what a caller types.
+
+For a beam-search alternative that returns multiple ranked candidate
+restorations instead of one greedy answer, see inference_beam.py's
+KyivanBeamRestorer (subclasses KyivanRestorer, doesn't modify this file).
 """
 
 import argparse
@@ -106,7 +115,11 @@ class KyivanRestorer:
         extracts attention weights for interpretability.
 
         Args:
-            text (str): The corrupted input string (e.g., "[SOS] а се покл[#]е").
+            text (str): The corrupted input string, using bare `?` for one
+                missing character and `#` for a lacuna of unknown length
+                (e.g., "а се покл#е"). No brackets, no `[SOS]` -- those are
+                the model's internal vocab tokens, not user-facing syntax;
+                `[SOS]` is always prepended automatically.
             max_steps (int): A safety limit for the maximum number of decoding iterations.
 
         Returns:
@@ -114,31 +127,36 @@ class KyivanRestorer:
         """
         print(f"\n--- ORIGINAL TEXT: {text} ---")
 
-        # 0. Normalize the text
-        text = normalize_historical_text(text)
-        print(f"\n--- NORMALIZED TEXT: {text} ---")
-
-        # 1. Fast Tokenization
-        # Split the string while preserving the structural integrity of special tags and masks
+        # Tokenize: split on `?`/`#` FIRST, then normalize only the
+        # plain-text segments between them. normalize_historical_text is
+        # designed for raw historical text, not this input syntax -- run on
+        # the whole string first (as this used to do), it eats the markers:
+        # `?` is treated as modern-punctuation noise and deleted
+        # (_DELETE_CHARS), so a marker-then-normalize order loses it before
+        # it can ever be recognized.
         tokens = []
-        parts = re.split(r"(\[-\]|\[#\]|\[SOS\])", text)
+        parts = re.split(r"([?#])", text)
 
         for part in parts:
             if not part:
                 continue
-            if part.startswith("[") and part.endswith("]"):
-                tokens.append(self.char_vocab.get(part, self.char_vocab["[UNK]"]))
+            if part == "?":
+                tokens.append(self.mask_id)
+            elif part == "#":
+                tokens.append(self.unk_id)
             else:
                 # Vocab is lowercase-only (see build_char_tokenizer.py) --
                 # fold here too, or any uppercase input character would
                 # miss the vocab and silently become [UNK].
-                for ch in part:
+                for ch in normalize_historical_text(part):
                     tokens.append(
                         self.char_vocab.get(ch.lower(), self.char_vocab["[UNK]"])
                     )
 
+        print(f"\n--- TOKENIZED (pre-[SOS]) LENGTH: {len(tokens)} ---")
+
         # Ensure the global [SOS] token is present for multi-task heads
-        if tokens[0] != self.sos_id:
+        if not tokens or tokens[0] != self.sos_id:
             tokens.insert(0, self.sos_id)
 
         step = 0
@@ -235,8 +253,13 @@ class KyivanRestorer:
                 saliency_data_for_frontend = []
 
                 for weight, token_idx in zip(top_weights, top_indices):
-                    looked_at_char = self.id_to_char.get(tokens[token_idx.item()], "")
-                    if looked_at_char and looked_at_char not in self.special_ids:
+                    looked_at_id = tokens[token_idx.item()]
+                    looked_at_char = self.id_to_char.get(looked_at_id, "")
+                    # Compare the id against special_ids (a set of ids), not
+                    # the decoded string against it -- a str is never `in` a
+                    # set of ints, so this filter previously never excluded
+                    # special tokens from the saliency output.
+                    if looked_at_char and looked_at_id not in self.special_ids:
                         w_percent = weight.item() * 100
                         print(
                             f"Looked at: '{looked_at_char}' (Position: {token_idx.item()}) - Weight: {w_percent:.1f}%"
@@ -288,7 +311,9 @@ if __name__ == "__main__":
         "--text",
         type=str,
         required=True,
-        help="Corrupted text sequence. Example: '[SOS] а се покл[#]е'",
+        help="Corrupted text sequence, using bare '?' for one missing "
+        "character and '#' for a lacuna of unknown length. "
+        "Example: 'а се покл#е'",
     )
     parser.add_argument(
         "--device", default="cpu", help="Compute device (e.g., cpu, cuda)"

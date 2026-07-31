@@ -42,15 +42,15 @@ def main():
     api = HfApi()
 
     print(f"Pushing dataset to https://huggingface.co/datasets/{args.repo_id} ...")
-    # Pushing ONLY train and eval splits to avoid leaking Test A and Test B online
     for split_name, split_ds in ds.items():
-        if split_name in ["test_a", "test_b"]:
-            print(f"Skipping split '{split_name}' (kept local for zero data leakage).")
-            continue
-
-        print(f"Pushing split '{split_name}'...")
+        # test_b carries pre-computed "labels" (real historical lacunae) while
+        # train/eval/test_a don't (masked dynamically by the collator at load
+        # time) -- the Hub requires matching features across splits of the
+        # same config, so test_b gets its own config.
+        config_name = "test_b" if split_name == "test_b" else "default"
+        print(f"Pushing split '{split_name}' (config '{config_name}')...")
         split_ds.push_to_hub(
-            args.repo_id, config_name="default", split=split_name, token=args.token
+            args.repo_id, config_name=config_name, split=split_name, token=args.token
         )
 
     # 2. Upload the tokenizer file to the same repository

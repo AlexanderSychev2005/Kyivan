@@ -1221,6 +1221,10 @@ def main() -> None:
         from datasets import load_dataset
 
         dataset = load_dataset(args.dataset_dir)
+        # test_b lives in its own Hub config (different schema -- see
+        # push_to_hf.py), so it doesn't come back from the default load above.
+        test_b = load_dataset(args.dataset_dir, "test_b")
+        dataset["test_b"] = test_b["test_b"]
 
     if Path(args.char_vocab_path).exists():
         char_vocab = load_json(args.char_vocab_path)

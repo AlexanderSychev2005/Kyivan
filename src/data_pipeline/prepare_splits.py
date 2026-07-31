@@ -354,6 +354,8 @@ def main():
         {
             "train": Dataset.from_list(strip_export_fields(train_records)),
             "eval": Dataset.from_list(strip_export_fields(eval_records)),
+            "test_a": Dataset.from_list(strip_export_fields(test_a_records)),
+            "test_b": Dataset.from_list(strip_export_fields(test_b_records)),
         }
     )
 

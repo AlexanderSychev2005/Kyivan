@@ -28,18 +28,19 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sklearn.metrics import f1_score
 from collator_v2 import KyivanPhysicalCollatorV2
 from config import KyivanConfig
 from datasets import load_from_disk
-from model import Kyivan
-from vocab_categories import maskable_ids
+from sklearn.metrics import f1_score
 from transformers import (
     EarlyStoppingCallback,
     Trainer,
     TrainerCallback,
     TrainingArguments,
 )
+from vocab_categories import maskable_ids
+
+from model import Kyivan
 
 ALLOWED_PRED_IDS: Optional[set] = None
 
@@ -287,17 +288,13 @@ def compute_metrics(eval_preds: Tuple[np.ndarray, np.ndarray]) -> Dict[str, floa
             if np.any(valid_mask):
                 true_region = region_labels[valid_mask]
                 pred_region = region_preds[valid_mask]
-                metrics["region_accuracy"] = float(
-                    np.mean(pred_region == true_region)
-                )
+                metrics["region_accuracy"] = float(np.mean(pred_region == true_region))
                 # Macro F1 across the 4 dialect classes -- the corpus is
                 # heavily imbalanced (OES dominates by document count), so
                 # accuracy alone can look fine while the model just always
                 # guesses the majority class.
                 metrics["region_macro_f1"] = float(
-                    f1_score(
-                        true_region, pred_region, average="macro", zero_division=0
-                    )
+                    f1_score(true_region, pred_region, average="macro", zero_division=0)
                 )
         except Exception:
             pass
@@ -474,9 +471,7 @@ class KyivanTrainer(Trainer):
             if loss_date is not None:
                 self._component_loss_sums["loss_date"] += float(loss_date.detach())
             if loss_region is not None:
-                self._component_loss_sums["loss_region"] += float(
-                    loss_region.detach()
-                )
+                self._component_loss_sums["loss_region"] += float(loss_region.detach())
             self._component_loss_count += 1
 
         return (total_loss, outputs) if return_outputs else total_loss
@@ -649,7 +644,9 @@ def generate_predictions_report(
             )
 
             no_restore = labels is None or -100 not in labels
-            if no_restore and not (has_gap_labels or has_date_label or has_region_label):
+            if no_restore and not (
+                has_gap_labels or has_date_label or has_region_label
+            ):
                 continue
 
             mask_positions = (
@@ -696,9 +693,7 @@ def generate_predictions_report(
                         {
                             "sample_idx": i,
                             "position": pos,
-                            "context": get_context(
-                                input_ids_list, pos, context_window
-                            ),
+                            "context": get_context(input_ids_list, pos, context_window),
                             "true_action": decode_action(true_action),
                             "pred_action": decode_action(pred_action),
                             "is_correct": is_correct_gap,
@@ -800,7 +795,9 @@ def generate_predictions_report(
                     and date_labels_mask_batch is not None
                     and float(date_labels_mask_batch[b]) > 0.5
                 ):
-                    date_true_bins.append(int(torch.argmax(date_labels_batch[b]).item()))
+                    date_true_bins.append(
+                        int(torch.argmax(date_labels_batch[b]).item())
+                    )
                     date_pred_bins.append(
                         int(torch.argmax(outputs.logits_date[b]).item())
                     )
@@ -919,7 +916,9 @@ def generate_predictions_report(
         gap_output_path = output_path.with_name(
             output_path.stem + "_gaps" + output_path.suffix
         )
-        pd.DataFrame(gap_rows).to_csv(gap_output_path, index=False, encoding="utf-8-sig")
+        pd.DataFrame(gap_rows).to_csv(
+            gap_output_path, index=False, encoding="utf-8-sig"
+        )
         log.info(f"Saved gap-expansion ([#] unk head) report: {gap_output_path}")
 
     metrics = {
@@ -968,9 +967,7 @@ def generate_predictions_report(
         )
         metrics["date_macro_f1"] = round(
             float(
-                f1_score(
-                    date_true_arr, date_pred_arr, average="macro", zero_division=0
-                )
+                f1_score(date_true_arr, date_pred_arr, average="macro", zero_division=0)
             ),
             4,
         )
@@ -1076,8 +1073,7 @@ def main() -> None:
         "--loss_weight_restore",
         type=float,
         default=5.0,
-        help="Weight for the [-] restoration cross-entropy loss (was "
-        "hardcoded 3.0).",
+        help="Weight for the [-] restoration cross-entropy loss (was hardcoded 3.0).",
     )
     parser.add_argument(
         "--loss_weight_unk",
@@ -1223,6 +1219,7 @@ def main() -> None:
     else:
         log.info(f"Loading dataset directly from HuggingFace Hub: {args.dataset_dir}")
         from datasets import load_dataset
+
         dataset = load_dataset(args.dataset_dir)
 
     if Path(args.char_vocab_path).exists():
@@ -1230,10 +1227,11 @@ def main() -> None:
     else:
         log.info(f"Downloading vocab from HuggingFace Hub ({args.dataset_dir})...")
         from huggingface_hub import hf_hub_download
+
         downloaded_path = hf_hub_download(
             repo_id=args.dataset_dir,
             repo_type="dataset",
-            filename="tokenizer/char_vocab.json"
+            filename="tokenizer/char_vocab.json",
         )
         char_vocab = load_json(downloaded_path)
 
@@ -1254,27 +1252,21 @@ def main() -> None:
     model = Kyivan(config, num_date_bins=20, num_regions=4)
 
     import torch
-    
-    is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
-    
+
+    # MI300X (ROCm) and Ampere+ (CUDA) both support native BF16, which prevents the
+    # FP16 gradient overflow (inf) issues often seen in Transformer training.
     if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
-        log.info("🚀 Hardware BF16 support detected! Enabling BF16.")
+        log.info(
+            "🚀 Hardware BF16 support detected (MI300X/Ampere+)! Enabling BF16 and TF32."
+        )
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
         auto_bf16 = True
         auto_fp16 = False
-        # TF32 is NVIDIA Ampere+ only; ROCm doesn't support it
-        if not is_rocm:
-            torch.backends.cuda.matmul.allow_tf32 = True
-            torch.backends.cudnn.allow_tf32 = True
-            auto_tf32 = True
-            log.info("   TF32 enabled (NVIDIA Ampere+)")
-        else:
-            auto_tf32 = False
-            log.info("   ROCm detected, TF32 skipped")
     else:
         log.info("🚀 Older architecture detected. Enabling FP16.")
         auto_bf16 = False
         auto_fp16 = True
-        auto_tf32 = False
 
     n_params = sum(p.numel() for p in model.parameters())
     log.info(f"  Total params: {n_params:,}")
@@ -1318,7 +1310,6 @@ def main() -> None:
         warmup_steps=args.warmup_steps,
         fp16=auto_fp16,
         bf16=auto_bf16,
-        tf32=auto_tf32,
         weight_decay=0.01,
         max_grad_norm=1.0,
         dataloader_num_workers=4,

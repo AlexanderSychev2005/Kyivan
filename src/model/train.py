@@ -1217,8 +1217,25 @@ def main() -> None:
     log.info("Starting Kyivan Training")
     log.info("=" * 80)
 
-    dataset = load_from_disk(args.dataset_dir)
-    char_vocab = load_json(args.char_vocab_path)
+    if Path(args.dataset_dir).exists():
+        log.info(f"Loading local dataset from {args.dataset_dir}")
+        dataset = load_from_disk(args.dataset_dir)
+    else:
+        log.info(f"Loading dataset directly from HuggingFace Hub: {args.dataset_dir}")
+        from datasets import load_dataset
+        dataset = load_dataset(args.dataset_dir)
+
+    if Path(args.char_vocab_path).exists():
+        char_vocab = load_json(args.char_vocab_path)
+    else:
+        log.info(f"Downloading vocab from HuggingFace Hub ({args.dataset_dir})...")
+        from huggingface_hub import hf_hub_download
+        downloaded_path = hf_hub_download(
+            repo_id=args.dataset_dir,
+            repo_type="dataset",
+            filename="tokenizer/char_vocab.json"
+        )
+        char_vocab = load_json(downloaded_path)
 
     global ALLOWED_PRED_IDS
     ALLOWED_PRED_IDS = maskable_ids(char_vocab)

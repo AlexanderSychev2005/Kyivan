@@ -22,9 +22,9 @@ class KyivanConfig(BertConfig):
 
     def __init__(
         self,
-        vocab_char_size: int = 256,
+        vocab_char_size: int = 120,
         hidden_size: int = 512,
-        num_hidden_layers: int = 6,
+        num_hidden_layers: int = 16,
         num_attention_heads: int = 8,
         intermediate_size: int = 2048,
         max_position_embeddings: int = 2048,

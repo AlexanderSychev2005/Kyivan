@@ -1137,7 +1137,7 @@ def main() -> None:
         "--hidden_size", type=int, default=512, help="Hidden dimension size"
     )
     parser.add_argument(
-        "--num_layers", type=int, default=6, help="Number of encoder layers"
+        "--num_layers", type=int, default=16, help="Number of encoder layers"
     )
     parser.add_argument(
         "--num_heads", type=int, default=8, help="Number of attention heads"

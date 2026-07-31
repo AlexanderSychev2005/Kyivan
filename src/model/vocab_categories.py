@@ -42,6 +42,4 @@ def is_maskable_char(ch: str) -> bool:
 
 def maskable_ids(char_vocab: Dict[str, int]) -> Set[int]:
     """Vocab ids of single characters whose Unicode category is maskable."""
-    return {
-        int(v) for k, v in char_vocab.items() if is_maskable_char(k)
-    }
+    return {int(v) for k, v in char_vocab.items() if is_maskable_char(k)}

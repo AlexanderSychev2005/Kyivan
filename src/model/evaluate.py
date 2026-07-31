@@ -638,6 +638,19 @@ def main():
         all_metrics["test_b"] = test_b_metrics
         print_metrics_summary("TEST B (Real Historical Lacunae)", test_b_metrics)
 
+    # --- Length Stratified CER (1-20) ---
+    if not args.skip_test_a and "test_a" in dataset:
+        stratified_metrics = evaluate_length_stratified_cer(
+            model=model,
+            dataset=dataset["test_a"],
+            char_vocab=char_vocab,
+            allowed_ids=allowed_ids,
+            output_dir=output_dir,
+            max_samples=1000,
+            device=device,
+        )
+        all_metrics["length_stratified_evaluation"] = stratified_metrics
+
     # Save all metrics
     metrics_path = output_dir / f"eval_metrics_{timestamp}.json"
     save_json(all_metrics, metrics_path)

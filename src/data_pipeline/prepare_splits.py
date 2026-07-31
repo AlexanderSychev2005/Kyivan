@@ -349,22 +349,29 @@ def main():
         }
         return [{k: v for k, v in r.items() if k in allowed} for r in recs]
 
-    dataset_dict = DatasetDict(
+    print("Creating HuggingFace dataset...")
+    hf_dataset = DatasetDict(
         {
             "train": Dataset.from_list(strip_export_fields(train_records)),
             "eval": Dataset.from_list(strip_export_fields(eval_records)),
-            "test_a": Dataset.from_list(strip_export_fields(test_a_records)),
         }
     )
 
-    if len(test_b_records) > 0:
-        dataset_dict["test_b"] = Dataset.from_list(strip_export_fields(test_b_records))
+    os.makedirs("prepared_datasets", exist_ok=True)
+    
+    # Save label configurations
+    print("Saving label configs...")
+    label_configs = {
+        "DIALECT_MAP": {"OES": 0, "CS": 1, "NW": 2, "SW": 3},
+        "DATE_BINS": "20 bins (class 0 to 19), 50 years each, covering 800 to 1800 AD"
+    }
+    with open("prepared_datasets/label_configs.json", "w", encoding="utf-8") as f:
+        json.dump(label_configs, f, indent=4, ensure_ascii=False)
 
     out_dir = "prepared_datasets/hf_dataset"
     print(f"Saving to {out_dir}...")
-    dataset_dict.save_to_disk(out_dir)
+    hf_dataset.save_to_disk(out_dir)
     print("Done!")
-
 
 if __name__ == "__main__":
     main()

@@ -42,23 +42,16 @@ def main():
     api = HfApi()
 
     print(f"Pushing dataset to https://huggingface.co/datasets/{args.repo_id} ...")
-    # Pushing dataset splits individually since test_b has 'labels' feature which the others don't
+    # Pushing ONLY train and eval splits to avoid leaking Test A and Test B online
     for split_name, split_ds in ds.items():
+        if split_name in ["test_a", "test_b"]:
+            print(f"Skipping split '{split_name}' (kept local for zero data leakage).")
+            continue
+
         print(f"Pushing split '{split_name}'...")
-        config_name = "test_b" if split_name == "test_b" else "default"
         split_ds.push_to_hub(
-            args.repo_id, config_name=config_name, split=split_name, token=args.token
+            args.repo_id, config_name="default", split=split_name, token=args.token
         )
-        json_path = f"human_readable_datasets/{split_name}.jsonl"
-        if os.path.exists(json_path):
-            print(f"Uploading readable text for '{split_name}'...")
-            api.upload_file(
-                path_or_fileobj=json_path,
-                path_in_repo=f"readable_texts/{split_name}.jsonl",
-                repo_id=args.repo_id,
-                repo_type="dataset",
-                token=args.token,
-            )
 
     # 2. Upload the tokenizer file to the same repository
     print(f"Pushing vocabulary file ({args.vocab_path}) to the same repo...")
@@ -69,6 +62,18 @@ def main():
         repo_type="dataset",
         token=args.token,
     )
+
+    # 3. Upload label configs
+    label_path = "prepared_datasets/label_configs.json"
+    if os.path.exists(label_path):
+        print(f"Pushing label configs ({label_path})...")
+        api.upload_file(
+            path_or_fileobj=label_path,
+            path_in_repo="configs/label_configs.json",
+            repo_id=args.repo_id,
+            repo_type="dataset",
+            token=args.token,
+        )
 
     print("\n✅ Successfully pushed dataset and tokenizer to Hugging Face Hub! 🎉")
     print(

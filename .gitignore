@@ -6,3 +6,6 @@ evaluation_results
 novgorodets
 checkpoints
 test_eval_datasets/
+data/
+prepared_datasets/
+human_readable_datasets/

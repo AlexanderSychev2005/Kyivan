@@ -1287,10 +1287,15 @@ def main() -> None:
         edge_prob=args.edge_prob,
     )
     if args.torch_compile:
-        # Pin every batch to a fixed shape (max_len + 1 for the prepended
-        # [SOS]) so torch.compile traces one graph instead of recompiling
-        # (or hitting a stale-cache shape mismatch) on every length change.
-        v2_kwargs["pad_to_len"] = args.max_len + 1
+        # Pin every batch to a fixed shape so torch.compile traces one graph
+        # instead of recompiling on every length change. Rounded up to a
+        # multiple of 64: Inductor's comprehensive_padding pads matmul
+        # buffers to alignment internally regardless, and an unaligned
+        # external shape (e.g. 1025) makes a later getitem/view in the same
+        # graph disagree with that internally-padded buffer size (assert_
+        # size_stride crash) -- pre-aligning the input sidesteps it.
+        raw_len = args.max_len + 1
+        v2_kwargs["pad_to_len"] = ((raw_len + 63) // 64) * 64
     collator = KyivanPhysicalCollatorV2(**v2_kwargs)
     # Fixed, comparable eval difficulty (one span of size 1..span_mask_eval_len)
     # instead of reusing the train collator's per-batch random mask rate --

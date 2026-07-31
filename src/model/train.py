@@ -29,7 +29,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import f1_score
-from collator import KyivanPhysicalCollator
 from collator_v2 import KyivanPhysicalCollatorV2
 from config import KyivanConfig
 from datasets import load_from_disk
@@ -1037,16 +1036,7 @@ def main() -> None:
         default="training_output",
         help="Directory for checkpoints and logs",
     )
-    parser.add_argument(
-        "--collator_version",
-        choices=["v1", "v2"],
-        default="v2",
-        help="v1 = collator.py (fixed mlm_prob per-char coin flip). v2 = "
-        "collator_v2.py (DeepMind Aeneas-aligned: per-example mask-rate "
-        "sampling). Whether punctuation is masked/scored is controlled "
-        "separately by vocab_categories.MASK_PUNCTUATION, not by this "
-        "flag. v1 is kept only for comparison.",
-    )
+
     parser.add_argument(
         "--char_mask_rate_min",
         type=float,
@@ -1265,17 +1255,17 @@ def main() -> None:
     model = Kyivan(config, num_date_bins=20, num_regions=4)
 
     import torch
-    compute_cap = torch.cuda.get_device_capability() if torch.cuda.is_available() else (0, 0)
-    is_ampere = compute_cap[0] >= 8
     
-    if is_ampere:
-        log.info("🚀 A100/Ampere architecture detected! Enabling BF16 and TF32.")
+    # MI300X (ROCm) and Ampere+ (CUDA) both support native BF16, which prevents the 
+    # FP16 gradient overflow (inf) issues often seen in Transformer training.
+    if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+        log.info("🚀 Hardware BF16 support detected (MI300X/Ampere+)! Enabling BF16 and TF32.")
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         auto_bf16 = True
         auto_fp16 = False
     else:
-        log.info(f"🚀 Older architecture detected (Compute {compute_cap[0]}.{compute_cap[1]}). Enabling FP16.")
+        log.info("🚀 Older architecture detected. Enabling FP16.")
         auto_bf16 = False
         auto_fp16 = True
 
@@ -1283,32 +1273,23 @@ def main() -> None:
     log.info(f"  Total params: {n_params:,}")
 
     eval_collator = None
-    if args.collator_version == "v2":
-        v2_kwargs = dict(
-            char_vocab=char_vocab,
-            char_mask_rate_min=args.char_mask_rate_min,
-            char_mask_rate_max=args.char_mask_rate_max,
-            span_mask_ratio=args.span_mask_ratio,
-            span_mask_geometric_p=args.span_mask_geometric_p,
-            unk_geometric_p=args.unk_geometric_p,
-            span_mask_eval_len=args.span_mask_eval_len,
-            edge_prob=args.edge_prob,
-        )
-        collator = KyivanPhysicalCollatorV2(**v2_kwargs)
-        # Fixed, comparable eval difficulty (one span of size 1..span_mask_eval_len)
-        # instead of reusing the train collator's per-batch random mask rate --
-        # otherwise eval_top1_accuracy (early stopping / best-checkpoint metric)
-        # swings with whatever rate happened to be sampled for that batch.
-        eval_collator = KyivanPhysicalCollatorV2(**v2_kwargs, mode="valid")
-    else:
-        collator = KyivanPhysicalCollator(
-            char_vocab=char_vocab,
-            mlm_prob=0.15,
-            span_mask_ratio=0.2,
-            span_geometric_p=0.2,
-            edge_prob=0.1,
-        )
-    log.info(f"Using collator: {args.collator_version}")
+    v2_kwargs = dict(
+        char_vocab=char_vocab,
+        char_mask_rate_min=args.char_mask_rate_min,
+        char_mask_rate_max=args.char_mask_rate_max,
+        span_mask_ratio=args.span_mask_ratio,
+        span_mask_geometric_p=args.span_mask_geometric_p,
+        unk_geometric_p=args.unk_geometric_p,
+        span_mask_eval_len=args.span_mask_eval_len,
+        edge_prob=args.edge_prob,
+    )
+    collator = KyivanPhysicalCollatorV2(**v2_kwargs)
+    # Fixed, comparable eval difficulty (one span of size 1..span_mask_eval_len)
+    # instead of reusing the train collator's per-batch random mask rate --
+    # otherwise eval_top1_accuracy (early stopping / best-checkpoint metric)
+    # swings with whatever rate happened to be sampled for that batch.
+    eval_collator = KyivanPhysicalCollatorV2(**v2_kwargs, mode="valid")
+    log.info("Using KyivanPhysicalCollatorV2 (Aeneas-aligned physics)")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     checkpoint_dir = output_dir / "checkpoints"

@@ -1255,18 +1255,26 @@ def main() -> None:
 
     import torch
     
-    # MI300X (ROCm) and Ampere+ (CUDA) both support native BF16, which prevents the 
-    # FP16 gradient overflow (inf) issues often seen in Transformer training.
+    is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+    
     if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
-        log.info("🚀 Hardware BF16 support detected (MI300X/Ampere+)! Enabling BF16 and TF32.")
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
+        log.info("🚀 Hardware BF16 support detected! Enabling BF16.")
         auto_bf16 = True
         auto_fp16 = False
+        # TF32 is NVIDIA Ampere+ only; ROCm doesn't support it
+        if not is_rocm:
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            auto_tf32 = True
+            log.info("   TF32 enabled (NVIDIA Ampere+)")
+        else:
+            auto_tf32 = False
+            log.info("   ROCm detected, TF32 skipped")
     else:
         log.info("🚀 Older architecture detected. Enabling FP16.")
         auto_bf16 = False
         auto_fp16 = True
+        auto_tf32 = False
 
     n_params = sum(p.numel() for p in model.parameters())
     log.info(f"  Total params: {n_params:,}")
@@ -1310,7 +1318,7 @@ def main() -> None:
         warmup_steps=args.warmup_steps,
         fp16=auto_fp16,
         bf16=auto_bf16,
-        tf32=auto_bf16,
+        tf32=auto_tf32,
         weight_decay=0.01,
         max_grad_norm=1.0,
         dataloader_num_workers=4,

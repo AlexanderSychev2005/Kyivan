@@ -1,55 +1,7 @@
 """
-Kyivan Physical Degradation Data Collator -- v2, aligned with DeepMind's
-Aeneas dataloader (google-deepmind/predictingthepast, train/dataloader.py +
-predictingthepast/util/text.py).
-
-collator.py (v1) captured the *idea* of a compressed unknown-length gap
-token but diverged from Aeneas in three structural ways, fixed here:
-
-1. Per-example masking intensity. v1 masks each character independently at a
-   fixed `mlm_prob`. Aeneas samples ONE rate per example from
-   `Uniform(char_mask_rate_min, char_mask_rate_max)`, then masks *exactly*
-   that count of positions (`np.random.choice(..., replace=False)`) -- every
-   example gets a precisely controlled, but varying, masking intensity.
-
-2. Non-compressing span masks. v1 collapses *every* multi-character masked
-   span into a single `[#]`. In Aeneas, the `span_mask_ratio` budget
-   (`util_text.random_mask_span`) masks a contiguous run but leaves it as
-   *individual* single-character mask markers -- length stays fully visible
-   and countable. The compressed "unknown-length gap" token is a SEPARATE,
-   single-per-example mechanism (`util_text.inject_missing_unk`), and it
-   carries no character-restoration target at all (Aeneas's `text_unmasked`
-   is computed *after* the gap already collapsed the original characters
-   away) -- only the binary "was it >1 char" label for the unk head.
-
-3. Punctuation protection. Aeneas excludes punctuation from
-   `non_missing_idx` and restricts `random_mask_span`'s search to
-   `[a-zA-Z0α-ωΑ-Ω\\s]+` runs -- punctuation is never masked.
-
-Also implements Aeneas's train/valid mode split: 'valid' skips the
-random-rate budget entirely and instead masks exactly one span of random
-size 1..span_mask_eval_len (`span_mask_eval_len`, `mode='valid'` in
-generate_sample) -- a fixed, comparable evaluation difficulty instead of
-train's noisier regime. Construct a second instance with mode='valid' for
-eval_dataset if you want that behavior; Trainer's default single-collator
-wiring uses one instance for both.
-
-Not ported from Aeneas (out of scope for "masking"): random_word_swap/
-_abbr/_delete, random_char_delete, random_sentence_swap, punctuation_delete,
-and per-epoch random context-window resampling (we pre-chunk once in
-prepare_splits.py's chunk_text instead).
-
-Kept from v1, not present in this Aeneas dataloader file: edge_prob's
-simulated physical tear at document start/end (birch-bark-specific). It
-shares the same "one compressed gap per example" slot as inject_missing_unk
--- if an edge tear fires, it *is* that example's gap; inject_missing_unk is
-only rolled when the edge tear didn't fire.
-
-Real Aeneas hyperparameters (train/config_greek.py), used as defaults here:
-char_mask_rate_min=0.0, char_mask_rate_max=0.75, span_mask_ratio=0.15,
-span_mask_geometric_p=0.1, inject_missing_unk_p=0.25 (reused directly as
-the geometric-distribution parameter for the gap's length, matching
-inject_missing_unk's own signature), span_mask_eval_len=10.
+Kyivan Physical Degradation Data Collator.
+Implements physically accurate document degradation (simulating torn edges, lacunae,
+and missing spans) based on variable per-document masking rates.
 """
 
 import random

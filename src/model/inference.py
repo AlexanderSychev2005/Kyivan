@@ -1,25 +1,6 @@
 """
 Kyivan Confidence-Based Restorer (Inference Module).
-
-This module implements the non-autoregressive decoding algorithm for the Kyivan model.
-Unlike traditional Left-to-Right generation (e.g., GPT or standard T5), this script utilizes
-a "Confidence-Based Search" approach:
-1. It analyzes the entire sequence bidirectionally in one pass.
-2. It queries the `Unk Head` to determine if unknown lacunae spans (`[#]`) need to be expanded.
-3. It evaluates all empty character masks (`[-]`) simultaneously and greedily fills only the
-   single mask the model is most confident about.
-4. It iterates this process, using newly restored characters as context for harder masks.
-5. It extracts Self-Attention Saliency Maps from the final encoder layer to provide
-   interpretability (showing exactly which context characters influenced the decision).
-
-Input syntax: bare `?` for one missing character, `#` for a lacuna of
-unknown length (e.g. "а се покл#е") -- no brackets, no `[SOS]`. `[-]`/`[#]`/
-`[SOS]` above refer to the model's internal vocab tokens that `?`/`#` get
-translated to, not what a caller types.
-
-For a beam-search alternative that returns multiple ranked candidate
-restorations instead of one greedy answer, see inference_beam.py's
-KyivanBeamRestorer (subclasses KyivanRestorer, doesn't modify this file).
+Implements the non-autoregressive decoding algorithm using a Confidence-Based Search approach.
 """
 
 import argparse

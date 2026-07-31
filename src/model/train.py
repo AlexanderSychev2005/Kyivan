@@ -607,15 +607,8 @@ def generate_predictions_report(
 
     model.eval()
     rows = []
-    # `[#]` gap-expansion (unk head) predictions are tracked separately from
-    # the `[-]` restoration rows above: it's a different task (binary
-    # "does this lacuna need to grow" over the single `[#]` position per
-    # example) with a disjoint set of scored positions, so lumping it into
-    # the same accuracy/CSV would silently blend two different things.
     gap_rows = []
     gap_correct = gap_used = 0
-    # For unk_macro_f1 -- accuracy alone can look fine while the head just
-    # always predicts the majority class (most `[#]` gaps are single-char).
     gap_true_actions: list = []
     gap_pred_actions: list = []
     hit_accum = {f"hit@{k}": 0 for k in k_values}
@@ -623,13 +616,6 @@ def generate_predictions_report(
     top_k_max = max(k_values)
     total_samples = min(len(dataset), max_samples)
 
-    # Date/region for both Test A and Test B -- Test A's numbers here are
-    # somewhat redundant with test_a_eval_metrics (compute_metrics via the
-    # standard eval loop), but keeping the report itself self-contained
-    # (date/region live in the same place regardless of which dataset you're
-    # looking at) is worth the near-zero extra cost: outputs.logits_date/
-    # logits_region are already computed by the same forward pass used for
-    # restoration/unk above, just not read until now.
     has_date_col = "date_labels" in dataset.column_names
     has_region_col = "region_labels" in dataset.column_names
     date_true_bins, date_pred_bins = [], []
@@ -809,10 +795,6 @@ def generate_predictions_report(
                 labels = labels.tolist() if isinstance(labels, torch.Tensor) else labels
                 mask_positions = [j for j, l in enumerate(labels) if l != -100]
 
-                # Same accumulators as the Test B branch above -- the
-                # collator already computes date_labels_mask/region_labels
-                # (-100 sentinel) per example, so validity here reuses that
-                # directly instead of re-deriving it.
                 if (
                     date_labels_batch is not None
                     and date_labels_mask_batch is not None

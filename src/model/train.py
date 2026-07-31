@@ -1115,7 +1115,7 @@ def main() -> None:
         "--num_heads", type=int, default=8, help="Number of attention heads"
     )
 
-    parser.add_argument("--epochs", type=int, default=10, help="Total training epochs")
+    parser.add_argument("--epochs", type=int, default=50, help="Total training epochs")
     parser.add_argument(
         "--train_bs", type=int, default=16, help="Training batch size per device"
     )
@@ -1310,12 +1310,12 @@ def main() -> None:
         warmup_steps=args.warmup_steps,
         fp16=auto_fp16,
         bf16=auto_bf16,
-        tf32=is_ampere,
+        tf32=auto_bf16,
         weight_decay=0.01,
         max_grad_norm=1.0,
         dataloader_num_workers=4,
         gradient_checkpointing=args.gradient_checkpointing,
-        torch_compile=True,
+        torch_compile=args.torch_compile,
         optim=args.optim,
         report_to=[],
         label_names=[

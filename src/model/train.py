@@ -1286,6 +1286,11 @@ def main() -> None:
         span_mask_eval_len=args.span_mask_eval_len,
         edge_prob=args.edge_prob,
     )
+    if args.torch_compile:
+        # Pin every batch to a fixed shape (max_len + 1 for the prepended
+        # [SOS]) so torch.compile traces one graph instead of recompiling
+        # (or hitting a stale-cache shape mismatch) on every length change.
+        v2_kwargs["pad_to_len"] = args.max_len + 1
     collator = KyivanPhysicalCollatorV2(**v2_kwargs)
     # Fixed, comparable eval difficulty (one span of size 1..span_mask_eval_len)
     # instead of reusing the train collator's per-batch random mask rate --

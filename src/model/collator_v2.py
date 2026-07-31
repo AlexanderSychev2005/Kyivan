@@ -29,6 +29,7 @@ class KyivanPhysicalCollatorV2:
         edge_prob: float = 0.1,
         mode: str = "train",
         date_bins: int = 20,
+        pad_to_len: Optional[int] = None,
     ) -> None:
         """
         Args:
@@ -65,6 +66,11 @@ class KyivanPhysicalCollatorV2:
         self.edge_prob = edge_prob
         self.mode = mode
         self.date_bins = date_bins
+        # Fixed padding target so every batch has the same shape -- required
+        # for torch.compile to reuse one compiled graph instead of
+        # recompiling (or hitting stale-cache shape mismatches) every time
+        # the per-batch max length changes.
+        self.pad_to_len = pad_to_len
 
         # Special (bracket-wrapped) tokens are always protected.
         self.special_ids = {
@@ -250,6 +256,8 @@ class KyivanPhysicalCollatorV2:
             b_labels_unk.append(labels_unk)
 
         max_len = max(len(seq) for seq in b_input_ids)
+        if self.pad_to_len is not None:
+            max_len = max(max_len, self.pad_to_len)
 
         t_input_ids = torch.full((len(features), max_len), self.pad_id, dtype=torch.long)
         t_labels_res = torch.full((len(features), max_len), -100, dtype=torch.long)

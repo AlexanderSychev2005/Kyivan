@@ -354,6 +354,10 @@ def main():
             "labels",
             "date_labels",
             "region_labels",
+            # Carries source_dataset/doc_id/macro_dialect/etc as a JSON blob
+            # -- generate_predictions_report reads source_dataset out of it
+            # to break eval metrics down per corpus (birchbark/torot/...).
+            "metadata",
         }
         return [{k: v for k, v in r.items() if k in allowed} for r in recs]
 

@@ -19,6 +19,7 @@ import argparse
 import json
 import logging
 import math
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
@@ -539,7 +540,12 @@ class TestBEvalCallback(TrainerCallback):
                 batch_size=args.per_device_eval_batch_size,
             )
 
-            formatted_metrics = {f"eval_test_b_{k}": v for k, v in metrics.items()}
+            # by_source is a nested dict -- trainer.log() forwards scalars to
+            # TensorBoard/wandb, which can't take a dict value, so it's saved
+            # to the JSON report below but left out of the scalar log stream.
+            formatted_metrics = {
+                f"eval_test_b_{k}": v for k, v in metrics.items() if k != "by_source"
+            }
             if hasattr(trainer, "log"):
                 trainer.log(formatted_metrics)
 
@@ -548,6 +554,20 @@ class TestBEvalCallback(TrainerCallback):
             log.info(f"Saved Test B metrics: {fname}")
         finally:
             self._in_eval = False
+
+
+def _get_source(meta_raw: Optional[str]) -> str:
+    """Pulls the originating corpus (birchbark/torot/epigraphica/...) out of a
+    row's 'metadata' JSON blob, written as 'source_dataset' by
+    prepare_datasets.py. Falls back to 'unknown' for rows predating that
+    field or with unparseable metadata."""
+    if not meta_raw:
+        return "unknown"
+    try:
+        meta = json.loads(meta_raw)
+    except (TypeError, ValueError):
+        return "unknown"
+    return meta.get("source_dataset") or "unknown"
 
 
 def generate_predictions_report(
@@ -638,6 +658,25 @@ def generate_predictions_report(
     date_true_bins, date_pred_bins = [], []
     region_true, region_pred = [], []
 
+    # Per-source (birchbark/torot/epigraphica/...) mirror of every
+    # accumulator above, keyed by _get_source(row["metadata"]) -- same shape
+    # so _summarize_report_metrics below can be reused verbatim per group.
+    by_source: Dict[str, Dict[str, Any]] = defaultdict(
+        lambda: {
+            "correct": 0,
+            "used": 0,
+            "hit_accum": {f"hit@{k}": 0 for k in k_values},
+            "gap_correct": 0,
+            "gap_used": 0,
+            "gap_true_actions": [],
+            "gap_pred_actions": [],
+            "date_true_bins": [],
+            "date_pred_bins": [],
+            "region_true": [],
+            "region_pred": [],
+        }
+    )
+
     log.info(f"Generating predictions report for {total_samples} samples...")
 
     # TEST B LOGIC (Pre-masked historical lacunae with existing labels)
@@ -679,6 +718,9 @@ def generate_predictions_report(
             ):
                 continue
 
+            source = _get_source(sample.get("metadata"))
+            src_acc = by_source[source]
+
             with torch.no_grad():
                 outputs = model(
                     input_ids=input_ids.unsqueeze(0),
@@ -690,12 +732,20 @@ def generate_predictions_report(
             input_ids_list = input_ids.cpu().numpy().tolist()
 
             if has_date_label:
-                date_true_bins.append(int(np.argmax(date_labels_sample)))
-                date_pred_bins.append(int(torch.argmax(outputs.logits_date[0]).item()))
+                true_bin = int(np.argmax(date_labels_sample))
+                pred_bin = int(torch.argmax(outputs.logits_date[0]).item())
+                date_true_bins.append(true_bin)
+                date_pred_bins.append(pred_bin)
+                src_acc["date_true_bins"].append(true_bin)
+                src_acc["date_pred_bins"].append(pred_bin)
 
             if has_region_label:
-                region_true.append(int(region_label_sample))
-                region_pred.append(int(torch.argmax(outputs.logits_region[0]).item()))
+                true_reg = int(region_label_sample)
+                pred_reg = int(torch.argmax(outputs.logits_region[0]).item())
+                region_true.append(true_reg)
+                region_pred.append(pred_reg)
+                src_acc["region_true"].append(true_reg)
+                src_acc["region_pred"].append(pred_reg)
 
             if has_gap_labels:
                 for pos in (j for j, l in enumerate(unk_labels) if l != -100):
@@ -706,14 +756,19 @@ def generate_predictions_report(
                         torch.softmax(pred_logits_u, dim=-1)[pred_action].item()
                     )
                     gap_used += 1
+                    src_acc["gap_used"] += 1
                     is_correct_gap = pred_action == true_action
                     if is_correct_gap:
                         gap_correct += 1
+                        src_acc["gap_correct"] += 1
                     gap_true_actions.append(true_action)
                     gap_pred_actions.append(pred_action)
+                    src_acc["gap_true_actions"].append(true_action)
+                    src_acc["gap_pred_actions"].append(pred_action)
                     gap_rows.append(
                         {
                             "sample_idx": i,
+                            "source": source,
                             "position": pos,
                             "context": get_context(input_ids_list, pos, context_window),
                             "true_action": decode_action(true_action),
@@ -745,9 +800,11 @@ def generate_predictions_report(
                     continue
 
                 used += 1
+                src_acc["used"] += 1
                 is_correct = pred_id == true_id
                 if is_correct:
                     correct += 1
+                    src_acc["correct"] += 1
 
                 probs = torch.softmax(pred_logits, dim=-1)
                 top1_prob = float(probs[pred_id].item())
@@ -763,10 +820,12 @@ def generate_predictions_report(
                         decode_one_token(int(tid)) == true_char for tid in top_ids[:k]
                     ):
                         hit_accum[f"hit@{k}"] += 1
+                        src_acc["hit_accum"][f"hit@{k}"] += 1
 
                 rows.append(
                     {
                         "sample_idx": i,
+                        "source": source,
                         "position": pos,
                         "context": context,
                         "true_char": true_char,
@@ -812,25 +871,29 @@ def generate_predictions_report(
                 labels = labels.tolist() if isinstance(labels, torch.Tensor) else labels
                 mask_positions = [j for j, l in enumerate(labels) if l != -100]
 
+                source = _get_source(batch_raw[b].get("metadata"))
+                src_acc = by_source[source]
+
                 if (
                     date_labels_batch is not None
                     and date_labels_mask_batch is not None
                     and float(date_labels_mask_batch[b]) > 0.5
                 ):
-                    date_true_bins.append(
-                        int(torch.argmax(date_labels_batch[b]).item())
-                    )
-                    date_pred_bins.append(
-                        int(torch.argmax(outputs.logits_date[b]).item())
-                    )
+                    true_bin = int(torch.argmax(date_labels_batch[b]).item())
+                    pred_bin = int(torch.argmax(outputs.logits_date[b]).item())
+                    date_true_bins.append(true_bin)
+                    date_pred_bins.append(pred_bin)
+                    src_acc["date_true_bins"].append(true_bin)
+                    src_acc["date_pred_bins"].append(pred_bin)
 
                 if region_labels_batch is not None:
                     true_region_b = int(region_labels_batch[b])
                     if true_region_b != -100:
+                        pred_region_b = int(torch.argmax(outputs.logits_region[b]).item())
                         region_true.append(true_region_b)
-                        region_pred.append(
-                            int(torch.argmax(outputs.logits_region[b]).item())
-                        )
+                        region_pred.append(pred_region_b)
+                        src_acc["region_true"].append(true_region_b)
+                        src_acc["region_pred"].append(pred_region_b)
 
                 unk_labels = (
                     unk_labels_batch[b].tolist()
@@ -848,14 +911,19 @@ def generate_predictions_report(
                             torch.softmax(pred_logits_u, dim=-1)[pred_action].item()
                         )
                         gap_used += 1
+                        src_acc["gap_used"] += 1
                         is_correct_gap = pred_action == true_action
                         if is_correct_gap:
                             gap_correct += 1
+                            src_acc["gap_correct"] += 1
                         gap_true_actions.append(true_action)
                         gap_pred_actions.append(pred_action)
+                        src_acc["gap_true_actions"].append(true_action)
+                        src_acc["gap_pred_actions"].append(pred_action)
                         gap_rows.append(
                             {
                                 "sample_idx": start + b,
+                                "source": source,
                                 "position": pos,
                                 "context": get_context(
                                     sample_input_ids_for_gap, pos, context_window
@@ -896,9 +964,11 @@ def generate_predictions_report(
                         continue
 
                     used += 1
+                    src_acc["used"] += 1
                     is_correct = pred_id == true_id
                     if is_correct:
                         correct += 1
+                        src_acc["correct"] += 1
 
                     probs = torch.softmax(pred_logits, dim=-1)
                     top1_prob = float(probs[pred_id].item())
@@ -915,10 +985,12 @@ def generate_predictions_report(
                             for tid in top_ids[:k]
                         ):
                             hit_accum[f"hit@{k}"] += 1
+                            src_acc["hit_accum"][f"hit@{k}"] += 1
 
                     rows.append(
                         {
                             "sample_idx": start + b,
+                            "source": source,
                             "position": pos,
                             "context": context,
                             "true_char": true_char,
@@ -943,75 +1015,120 @@ def generate_predictions_report(
         )
         log.info(f"Saved gap-expansion ([#] unk head) report: {gap_output_path}")
 
-    metrics = {
-        "total_predictions": used,
-        "correct": correct,
-        "accuracy": round(correct / used, 4) if used > 0 else 0.0,
-        **{k: round(v / used, 4) if used > 0 else 0.0 for k, v in hit_accum.items()},
-        # Separate from the restoration accuracy above: scored only at `[#]`
-        # positions, over the binary "does this gap need to grow" decision.
-        # Named unk_* to match compute_metrics's naming for the same head
-        # (outputs.logits_unk / unk_labels), rather than the gap_* used
-        # internally in this function.
-        "unk_total": gap_used,
-        "unk_correct": gap_correct,
-        "unk_accuracy": round(gap_correct / gap_used, 4) if gap_used > 0 else 0.0,
-        "unk_macro_f1": round(
-            float(
-                f1_score(
-                    gap_true_actions,
-                    gap_pred_actions,
-                    average="macro",
-                    zero_division=0,
-                )
-            ),
-            4,
+    def _summarize(
+        correct_: int,
+        used_: int,
+        hit_accum_: Dict[str, int],
+        gap_correct_: int,
+        gap_used_: int,
+        gap_true_: list,
+        gap_pred_: list,
+        date_true_: list,
+        date_pred_: list,
+        region_true_: list,
+        region_pred_: list,
+    ) -> Dict[str, float]:
+        m = {
+            "total_predictions": used_,
+            "correct": correct_,
+            "accuracy": round(correct_ / used_, 4) if used_ > 0 else 0.0,
+            **{
+                k: round(v / used_, 4) if used_ > 0 else 0.0
+                for k, v in hit_accum_.items()
+            },
+            # Separate from the restoration accuracy above: scored only at
+            # `[#]` positions, over the binary "does this gap need to grow"
+            # decision. Named unk_* to match compute_metrics's naming for the
+            # same head (outputs.logits_unk / unk_labels), rather than the
+            # gap_* used internally in this function.
+            "unk_total": gap_used_,
+            "unk_correct": gap_correct_,
+            "unk_accuracy": round(gap_correct_ / gap_used_, 4) if gap_used_ > 0 else 0.0,
+            "unk_macro_f1": round(
+                float(
+                    f1_score(gap_true_, gap_pred_, average="macro", zero_division=0)
+                ),
+                4,
+            )
+            if gap_used_ > 0
+            else 0.0,
+        }
+
+        # Date/region: populated from either branch above (Test A or Test B --
+        # whichever has valid, non-withheld labels). Mirrors compute_metrics's
+        # date/region block -- peak-bin MAE/exact-match/macro-F1 for date,
+        # accuracy/macro-F1 for region -- kept as its own block since it's a
+        # whole-document, [SOS]-pooled prediction, unrelated to the
+        # per-character rows above.
+        if date_true_:
+            date_true_arr = np.array(date_true_)
+            date_pred_arr = np.array(date_pred_)
+            bin_mae = float(np.mean(np.abs(date_pred_arr - date_true_arr)))
+            m["date_total"] = len(date_true_)
+            m["date_bin_mae"] = round(bin_mae, 4)
+            m["date_years_mae"] = round(bin_mae * 50, 4)
+            m["date_exact_accuracy"] = round(
+                float(np.mean(date_pred_arr == date_true_arr)), 4
+            )
+            m["date_macro_f1"] = round(
+                float(
+                    f1_score(
+                        date_true_arr, date_pred_arr, average="macro", zero_division=0
+                    )
+                ),
+                4,
+            )
+
+        if region_true_:
+            region_true_arr = np.array(region_true_)
+            region_pred_arr = np.array(region_pred_)
+            m["region_total"] = len(region_true_)
+            m["region_accuracy"] = round(
+                float(np.mean(region_pred_arr == region_true_arr)), 4
+            )
+            m["region_macro_f1"] = round(
+                float(
+                    f1_score(
+                        region_true_arr,
+                        region_pred_arr,
+                        average="macro",
+                        zero_division=0,
+                    )
+                ),
+                4,
+            )
+        return m
+
+    metrics = _summarize(
+        correct,
+        used,
+        hit_accum,
+        gap_correct,
+        gap_used,
+        gap_true_actions,
+        gap_pred_actions,
+        date_true_bins,
+        date_pred_bins,
+        region_true,
+        region_pred,
+    )
+
+    metrics["by_source"] = {
+        source: _summarize(
+            acc["correct"],
+            acc["used"],
+            acc["hit_accum"],
+            acc["gap_correct"],
+            acc["gap_used"],
+            acc["gap_true_actions"],
+            acc["gap_pred_actions"],
+            acc["date_true_bins"],
+            acc["date_pred_bins"],
+            acc["region_true"],
+            acc["region_pred"],
         )
-        if gap_used > 0
-        else 0.0,
+        for source, acc in sorted(by_source.items())
     }
-
-    # Date/region: populated from either branch above (Test A or Test B --
-    # whichever has valid, non-withheld labels). Mirrors compute_metrics's
-    # date/region block -- peak-bin MAE/exact-match/macro-F1 for date,
-    # accuracy/macro-F1 for region -- kept as its own block since it's a
-    # whole-document, [SOS]-pooled prediction, unrelated to the
-    # per-character rows above.
-    if date_true_bins:
-        date_true_arr = np.array(date_true_bins)
-        date_pred_arr = np.array(date_pred_bins)
-        bin_mae = float(np.mean(np.abs(date_pred_arr - date_true_arr)))
-        metrics["date_total"] = len(date_true_bins)
-        metrics["date_bin_mae"] = round(bin_mae, 4)
-        metrics["date_years_mae"] = round(bin_mae * 50, 4)
-        metrics["date_exact_accuracy"] = round(
-            float(np.mean(date_pred_arr == date_true_arr)), 4
-        )
-        metrics["date_macro_f1"] = round(
-            float(
-                f1_score(date_true_arr, date_pred_arr, average="macro", zero_division=0)
-            ),
-            4,
-        )
-
-    if region_true:
-        region_true_arr = np.array(region_true)
-        region_pred_arr = np.array(region_pred)
-        metrics["region_total"] = len(region_true)
-        metrics["region_accuracy"] = round(
-            float(np.mean(region_pred_arr == region_true_arr)), 4
-        )
-        metrics["region_macro_f1"] = round(
-            float(
-                f1_score(
-                    region_true_arr,
-                    region_pred_arr,
-                    average="macro",
-                    zero_division=0,
-                )
-            ),
-            4,
-        )
 
     return metrics
 
@@ -1146,7 +1263,7 @@ def main() -> None:
         "the fixed --max_len instead.",
     )
     parser.add_argument(
-        "--hidden_size", type=int, default=160, help="Hidden dimension size"
+        "--hidden_size", type=int, default=384, help="Hidden dimension size"
     )
     parser.add_argument(
         "--num_layers", type=int, default=16, help="Number of encoder layers"
@@ -1244,10 +1361,28 @@ def main() -> None:
     )
 
     parser.add_argument(
-        "--report_test_a", action="store_true", help="Generate CSV report for Test A"
+        "--report_test_a",
+        action="store_true",
+        default=True,
+        help="Generate CSV report for Test A (on by default)",
     )
     parser.add_argument(
-        "--report_test_b", action="store_true", help="Generate CSV report for Test B"
+        "--no_report_test_a",
+        dest="report_test_a",
+        action="store_false",
+        help="Disable the Test A CSV report",
+    )
+    parser.add_argument(
+        "--report_test_b",
+        action="store_true",
+        default=True,
+        help="Generate CSV report for Test B (on by default)",
+    )
+    parser.add_argument(
+        "--no_report_test_b",
+        dest="report_test_b",
+        action="store_false",
+        help="Disable the Test B CSV report",
     )
     parser.add_argument(
         "--report_test_b_every_eval",

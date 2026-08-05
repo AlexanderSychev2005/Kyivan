@@ -90,6 +90,8 @@ def get_macro_dialect(dataset_name, dialect_str, file_source=""):
         # consistently rather than collapsing it into generic OES.
         if "новгород" in dialect or "псков" in dialect:
             return "NW"
+        if "западнорусск" in dialect or "южнорусск" in dialect:
+            return "SW"
 
         # Improved logic for descriptions
         is_oes_base = (
@@ -260,6 +262,12 @@ def process_datasets():
                     else None,
                     "category": doc.get("category", "unknown"),
                     "original_dialect": dialect,
+                    # Which of the `datasets` list (above) this doc came from --
+                    # separate from `source`/`dialect` (a within-dataset
+                    # sub-source string) so eval can report accuracy per
+                    # corpus (birchbark/torot/epigraphica/...) rather than
+                    # only pooled.
+                    "source_dataset": ds_name,
                 }
                 if "original" in doc:
                     new_doc["original"] = normalize_historical_text(
@@ -294,6 +302,7 @@ def process_datasets():
 
                 doc["macro_dialect"] = macro_dialect
                 doc["date_target"] = target
+                doc["source_dataset"] = "birchbark"
                 if "text" not in doc and "target" in doc:
                     doc["text"] = doc["target"]
 
@@ -353,6 +362,7 @@ def process_datasets():
                         "category_mapped", doc.get("category", "unknown")
                     ),
                     "original_dialect": "birchbark",
+                    "source_dataset": "birchbark",
                     "original": original,
                     "target": target,
                 }
@@ -376,6 +386,7 @@ def process_datasets():
                 doc = {
                     "original": original,
                     "macro_dialect": "CS",
+                    "source_dataset": "epigraphica",
                     "date_target": [0.0] * 20,
                 }
                 f_out.write(json.dumps(doc, ensure_ascii=False) + "\n")

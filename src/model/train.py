@@ -317,6 +317,7 @@ class KyivanTrainer(Trainer):
         loss_weight_unk: float = 1.0,
         loss_weight_date: float = 0.5,
         loss_weight_region: float = 0.5,
+        sampling_power: float = 0.0,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -327,6 +328,13 @@ class KyivanTrainer(Trainer):
         # which would score eval metrics (and early stopping) under the same
         # noisy, up-to-75%-mask-rate train regime instead of a fixed difficulty.
         self.eval_data_collator = eval_data_collator
+        # 0.0 = uniform (one document = one row = equal weight, the previous
+        # behavior). >0.0 weights each row by len(text)**sampling_power, so
+        # the ~80% of train rows that are short fragments (birchbark/nkrya/
+        # epigraphica, median well under crop_min_len) stop crowding out the
+        # ~6% of rows that are long-form sources (sofia/bible_ostrog/torot/
+        # pushkin) carrying ~84% of the corpus's actual characters.
+        self.sampling_power = sampling_power
 
         self.loss_weight_restore = loss_weight_restore
         self.loss_weight_unk = loss_weight_unk
@@ -345,6 +353,20 @@ class KyivanTrainer(Trainer):
             "loss_region": 0.0,
         }
         self._component_loss_count = 0
+
+    def _get_train_sampler(self, train_dataset: Any = None) -> Any:
+        if train_dataset is None:
+            train_dataset = self.train_dataset
+        if (
+            self.sampling_power == 0.0
+            or train_dataset is None
+            or "text" not in train_dataset.column_names
+        ):
+            return super()._get_train_sampler(train_dataset)
+        weights = [max(len(t), 1) ** self.sampling_power for t in train_dataset["text"]]
+        return torch.utils.data.WeightedRandomSampler(
+            weights, num_samples=len(train_dataset), replacement=True
+        )
 
     def get_eval_dataloader(self, eval_dataset: Any = None) -> Any:
         if self.eval_data_collator is None:
@@ -1097,6 +1119,19 @@ def main() -> None:
         "hardcoded 2.0). region_accuracy was already ~0.96 at the old "
         "weight, so it likely didn't need this much gradient share.",
     )
+    parser.add_argument(
+        "--sampling_power",
+        type=float,
+        default=0.5,
+        help="Train-row sampling weight is len(text)**sampling_power (with "
+        "replacement). 0.0 = uniform, one document = one row regardless of "
+        "length (the old behavior) -- with it, the ~80%% of train rows that "
+        "are short fragments (birchbark/nkrya/epigraphica) crowd out the "
+        "~6%% of rows (sofia/bible_ostrog/torot/pushkin) carrying ~84%% of "
+        "the corpus's characters. 1.0 = fully proportional to length; 0.5 "
+        "(sqrt) is a middle ground that boosts long documents without "
+        "silencing the short ones entirely.",
+    )
 
     parser.add_argument(
         "--max_len", type=int, default=1024, help="Maximum sequence length"
@@ -1436,6 +1471,7 @@ def main() -> None:
         loss_weight_unk=args.loss_weight_unk,
         loss_weight_date=args.loss_weight_date,
         loss_weight_region=args.loss_weight_region,
+        sampling_power=args.sampling_power,
     )
 
     log.info("Starting training...")

@@ -33,8 +33,25 @@ _LAT_TO_CYR = {
     "X": "Х",
     "i": "і",
     "I": "І",
+    # v/V standing in for izhitsa (ѵ/Ѵ) -- OCS spells Greek-origin loanwords
+    # (Egypt, Babylon, Cyril, Euphemia...) with izhitsa for the upsilon, and
+    # some source editions render it as Latin v. Only safe to fold via the
+    # mid-word rule below: v/V alone are also ordinary Latin-citation
+    # letters, so isolated-letter conversion would misfire on those.
+    "v": "ѵ",
+    "V": "Ѵ",
 }
 _LATIN_RUN_RE = re.compile(r"[A-Za-z]+")
+_CYR_CLASS = "а-яёѣѳѵіѫѧѩѭѯѱѷѹѻѽѿѡѕꙋꙗꙑ"
+# A short Latin run (OCR/font confusion, not real Latin) wedged directly
+# between Cyrillic letters with no space -- e.g. "АРXIЕПИСКОПА" for
+# "АРХІЕПИСКОПА", "вавvлонъ" for "вавѵлонъ". Bounded to <=4 chars and
+# requires every letter to have a mapping, so a real short foreign token
+# embedded in running text (which would never be fused directly onto a
+# Cyrillic word with zero separator) isn't touched.
+_MIDWORD_LATIN_RE = re.compile(
+    f"(?<=[{_CYR_CLASS}])([A-Za-z]{{1,4}})(?=[{_CYR_CLASS}])", re.IGNORECASE
+)
 
 
 def _fix_isolated_latin_homoglyphs(text: str) -> str:
@@ -42,7 +59,15 @@ def _fix_isolated_latin_homoglyphs(text: str) -> str:
         run = m.group(0)
         return _LAT_TO_CYR.get(run, run) if len(run) == 1 else run
 
-    return _LATIN_RUN_RE.sub(repl, text)
+    text = _LATIN_RUN_RE.sub(repl, text)
+
+    def repl_midword(m):
+        run = m.group(1)
+        if all(c in _LAT_TO_CYR for c in run):
+            return "".join(_LAT_TO_CYR[c] for c in run)
+        return run
+
+    return _MIDWORD_LATIN_RE.sub(repl_midword, text)
 
 
 # Single-codepoint diacritic letters with no place in Old Slavic text -- OCR

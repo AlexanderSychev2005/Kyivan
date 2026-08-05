@@ -1146,7 +1146,7 @@ def main() -> None:
         "the fixed --max_len instead.",
     )
     parser.add_argument(
-        "--hidden_size", type=int, default=384, help="Hidden dimension size"
+        "--hidden_size", type=int, default=160, help="Hidden dimension size"
     )
     parser.add_argument(
         "--num_layers", type=int, default=16, help="Number of encoder layers"

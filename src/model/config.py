@@ -23,10 +23,10 @@ class KyivanConfig(BertConfig):
     def __init__(
         self,
         vocab_char_size: int = 120,
-        hidden_size: int = 384,
+        hidden_size: int = 160,
         num_hidden_layers: int = 16,
         num_attention_heads: int = 8,
-        intermediate_size: int = 1536,
+        intermediate_size: int = 640,
         max_position_embeddings: int = 2048,
         hidden_dropout_prob: float = 0.1,
         attention_probs_dropout_prob: float = 0.1,

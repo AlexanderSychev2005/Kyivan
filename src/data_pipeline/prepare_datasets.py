@@ -69,6 +69,14 @@ def get_macro_dialect(dataset_name, dialect_str, file_source=""):
         return "NW"
     if dataset_name == "UD_Old_East_Slavic-RNC":
         return "OES"
+    if dataset_name == "litopys":
+        return "OES"
+    if dataset_name == "bldr_azbyka":
+        # to_cleaned_json.py already classified CS vs OES per document from
+        # the work's title genre word (Житие/Служба/... vs everything
+        # else) -- respect that instead of collapsing the whole source to
+        # one bucket the way the hardcoded sources above do.
+        return dialect_str if dialect_str in ("CS", "OES") else "OES"
 
     if dataset_name == "NKRYA":
         if "pskov" in file_source or "novgorod" in file_source:
@@ -76,6 +84,13 @@ def get_macro_dialect(dataset_name, dialect_str, file_source=""):
         return "OES"
 
     if dataset_name in ["pushkin_texts", "torot"]:
+        # torot's charter subset carries explicit regional-dialect mentions
+        # ("древненовгородского диалекта", "древнепсковского диалекта") --
+        # same NW signal birchbark already provides, worth tagging
+        # consistently rather than collapsing it into generic OES.
+        if "новгород" in dialect or "псков" in dialect:
+            return "NW"
+
         # Improved logic for descriptions
         is_oes_base = (
             "древнерусск" in dialect
@@ -167,6 +182,8 @@ def process_datasets():
         # "dialect"/"year" keys, both correctly excluded from the
         # date/region losses downstream rather than mislabeled.
         ("byliny", "data/byliny/byliny.json"),
+        ("bldr_azbyka", "data/bldr_azbyka/bldr_azbyka_cleaned.json"),
+        ("litopys", "data/litopys/litopys_cleaned.json"),
     ]
 
     stats = {"CS": 0, "OES": 0, "NW": 0, "SW": 0, "Unknown": 0}

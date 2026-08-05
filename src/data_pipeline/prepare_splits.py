@@ -88,7 +88,7 @@ def _clean_text_b_target(text):
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
-def collect_test_b(path, vocab, region_label, test_b_texts, test_b_records):
+def collect_test_b(path, vocab, region_label, test_b_texts, test_b_records, keep_fraction=1.0):
     """Every doc whose 'original' has a real () or [] must be excluded from
     the general train/eval/test_a pool, whether or not we can also build a
     usable masked test_b record from it (process_test_b_line's regex-based
@@ -96,10 +96,24 @@ def collect_test_b(path, vocab, region_label, test_b_texts, test_b_records):
     text always comes from the pipeline's own canonical 'text'/'target'
     field -- never from process_test_b_line's independently re-derived
     target string, which can diverge from it (different whitespace
-    collapsing) and silently break the exact-match leak check."""
+    collapsing) and silently break the exact-match leak check.
+
+    keep_fraction < 1.0 sends the rest of the otherwise-eligible docs back
+    into the general pool instead: birchbark/epigraphica are short enough
+    that most of a document's real signal comes from ITS BEING synthetically
+    maskable at all, not from the specific real gap test_b evaluates -- with
+    70%/52% of these two sources locked in test_b (never seen during
+    training), growing train mattered more than keeping every eligible doc
+    held out. The doc's 'text' field is already the bracket-free resolved
+    reading (see prepare_datasets.py), so a doc sent back needs no further
+    "un-bracketing" -- it flows through the normal train/eval/test_a pool
+    exactly like any other document, dynamically masked same as the rest.
+    Selection is a deterministic seeded sample, not "first N", so it isn't
+    biased toward whatever order docs happen to appear in the source file."""
     if not os.path.exists(path):
         return
 
+    docs = []
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             doc = json.loads(line)
@@ -108,27 +122,39 @@ def collect_test_b(path, vocab, region_label, test_b_texts, test_b_records):
                 continue
             if not (ROUND_PAT.search(original) or SQUARE_PAT.search(original)):
                 continue
+            docs.append(doc)
 
-            canonical = _clean_text_b_target(doc.get("text", doc.get("target", "")))
-            if canonical:
-                test_b_texts.add(canonical)
+    rng = random.Random(42)
+    rng.shuffle(docs)
+    n_keep = round(len(docs) * keep_fraction)
+    kept_docs = docs[:n_keep]
 
-            res = process_test_b_line(original, vocab)
-            if not res:
-                continue
-            m_ids, labels, tgt_str, masked_str = res
-            test_b_records.append(
-                {
-                    "input_ids": m_ids,
-                    "attention_mask": [1] * len(m_ids),
-                    "labels": labels,
-                    "date_labels": doc.get("date_target", [0.0] * 20),
-                    "region_labels": region_label,
-                    "original_text": tgt_str,
-                    "text_with_missing": masked_str,
-                    "metadata": json.dumps(doc, ensure_ascii=False),
-                }
-            )
+    for doc in kept_docs:
+        original = doc["original"]
+        canonical = _clean_text_b_target(doc.get("text", doc.get("target", "")))
+        if canonical:
+            test_b_texts.add(canonical)
+
+        res = process_test_b_line(original, vocab)
+        if not res:
+            continue
+        m_ids, labels, tgt_str, masked_str = res
+        test_b_records.append(
+            {
+                "input_ids": m_ids,
+                "attention_mask": [1] * len(m_ids),
+                "labels": labels,
+                "date_labels": doc.get("date_target", [0.0] * 20),
+                "region_labels": region_label,
+                "original_text": tgt_str,
+                "text_with_missing": masked_str,
+                "metadata": json.dumps(doc, ensure_ascii=False),
+            }
+        )
+    print(
+        f"  {path}: {len(kept_docs)}/{len(docs)} eligible docs kept in Test B "
+        f"({len(docs) - len(kept_docs)} returned to the general pool)."
+    )
 
 
 def main():
@@ -141,12 +167,20 @@ def main():
     test_b_records = []
     test_b_texts = set()
 
+    # Keep half of the otherwise-eligible real-lacuna docs in Test B (still
+    # a statistically meaningful held-out real-damage benchmark -- roughly
+    # 250-400 docs per source) and return the other half to train/eval/
+    # test_a, where 863/1241 birchbark and 517/986 epigraphica docs
+    # previously never contributed a single gradient update.
+    TEST_B_KEEP_FRACTION = 0.3
+
     collect_test_b(
         "prepared_datasets/epigraphica_prepared.jsonl",
         vocab,
         DIALECT_MAP["CS"],
         test_b_texts,
         test_b_records,
+        keep_fraction=TEST_B_KEEP_FRACTION,
     )
     collect_test_b(
         "prepared_datasets/birchbark_prepared.jsonl",
@@ -154,6 +188,7 @@ def main():
         DIALECT_MAP["NW"],
         test_b_texts,
         test_b_records,
+        keep_fraction=TEST_B_KEEP_FRACTION,
     )
 
     print(f"Extracted {len(test_b_records)} segments for Test B.")

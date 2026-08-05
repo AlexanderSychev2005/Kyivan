@@ -1026,7 +1026,7 @@ def main() -> None:
     parser.add_argument(
         "--char_mask_rate_max",
         type=float,
-        default=0.75,
+        default=0.4,
         help="v2 collator: upper bound of the per-example uniform sampling "
         "range for the overall character-masking rate.",
     )
@@ -1135,7 +1135,7 @@ def main() -> None:
     # percentage, so it stays short in absolute terms even as epochs is
     # tuned further. Override all five together if you change --batch_size
     # or train on a differently-sized dataset.
-    parser.add_argument("--epochs", type=int, default=150, help="Total training epochs")
+    parser.add_argument("--epochs", type=int, default=300, help="Total training epochs")
     parser.add_argument(
         "--batch_size", type=int, default=256, help="Batch size per device (train and eval)"
     )
@@ -1421,7 +1421,11 @@ def main() -> None:
         model=model,
         args=training_args,
         train_dataset=dataset["train"],
-        eval_dataset=dataset["test_a"],
+        # "eval" drives checkpoint selection/early stopping during training;
+        # test_a stays untouched until the final report below, so its
+        # numbers reflect a genuinely held-out split instead of the same
+        # data the best checkpoint was picked against.
+        eval_dataset=dataset["eval"],
         data_collator=collator,
         eval_data_collator=eval_collator,
         compute_metrics=compute_metrics,
@@ -1445,9 +1449,13 @@ def main() -> None:
     with open(log_path, "w", encoding="utf-8") as f:
         json.dump(trainer.log_history_custom, f, ensure_ascii=False, indent=2)
 
-    log.info("Computing final metrics on test_a...")
+    log.info("Computing final metrics on eval (best checkpoint, same split used for selection)...")
     eval_metrics = trainer.evaluate()
     save_json(eval_metrics, output_dir / f"eval_metrics_{timestamp}.json")
+
+    log.info("Computing final metrics on test_a (held out, never used for checkpoint selection)...")
+    test_a_metrics = trainer.evaluate(eval_dataset=dataset["test_a"])
+    save_json(test_a_metrics, output_dir / f"test_a_metrics_{timestamp}.json")
 
     report_specs = [
         (
@@ -1494,9 +1502,12 @@ def main() -> None:
         # runtime (train_runtime, seconds) alongside it.
         "training_loss": train_result.training_loss,
         "training_duration_seconds": train_result.metrics.get("train_runtime"),
-        # This is trainer.evaluate() run on test_a (via compute_metrics),
-        # not metrics on the train split -- named for what it actually is.
-        "test_a_eval_metrics": eval_metrics,
+        # eval_metrics: best checkpoint scored on "eval" -- the same split
+        # used for checkpoint selection/early stopping during training.
+        # test_a_eval_metrics: best checkpoint scored on "test_a", which was
+        # never seen by the Trainer -- this is the honest final number.
+        "eval_metrics": eval_metrics,
+        "test_a_eval_metrics": test_a_metrics,
         "args": vars(args),
     }
     if "test_a" in report_metrics:

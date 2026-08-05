@@ -43,3 +43,35 @@ def is_maskable_char(ch: str) -> bool:
 def maskable_ids(char_vocab: Dict[str, int]) -> Set[int]:
     """Vocab ids of single characters whose Unicode category is maskable."""
     return {int(v) for k, v in char_vocab.items() if is_maskable_char(k)}
+
+
+def tokenize_text(text: str, vocab: Dict[str, int]) -> list:
+    """Char-level tokenizer shared by prepare_splits.py (offline dataset
+    prep) and collator_v2.py (on-the-fly tokenization of raw `text` rows --
+    datasets are now pushed as plain text rather than pre-tokenized ids, so
+    training loads this same tokenizer instead of a separate copy)."""
+    tokens = []
+    i = 0
+    text_len = len(text)
+    unk_id = vocab.get("[UNK]", 1)
+
+    while i < text_len:
+        if text[i] == "[":
+            end = text.find("]", i)
+            if end != -1:
+                special = text[i : end + 1]
+                if special in vocab:
+                    tokens.append(vocab[special])
+                    i = end + 1
+                    continue
+        # The vocab is lowercase-only (build_char_tokenizer.py case-folds
+        # when counting) -- fold here too, so an uppercase occurrence in raw
+        # text still resolves to its vocab entry instead of falling back to
+        # [UNK].
+        char = text[i].lower()
+        if char in vocab:
+            tokens.append(vocab[char])
+        else:
+            tokens.append(unk_id)
+        i += 1
+    return tokens

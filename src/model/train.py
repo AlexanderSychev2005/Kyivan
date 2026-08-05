@@ -1102,6 +1102,15 @@ def main() -> None:
         "--max_len", type=int, default=1024, help="Maximum sequence length"
     )
     parser.add_argument(
+        "--crop_min_len",
+        type=int,
+        default=256,
+        help="Lower bound for the randomized train-time crop length applied "
+        "to documents longer than --max_len (see "
+        "KyivanPhysicalCollatorV2._maybe_crop). Eval/test_a always crop to "
+        "the fixed --max_len instead.",
+    )
+    parser.add_argument(
         "--hidden_size", type=int, default=512, help="Hidden dimension size"
     )
     parser.add_argument(
@@ -1111,22 +1120,28 @@ def main() -> None:
         "--num_heads", type=int, default=8, help="Number of attention heads"
     )
 
-    parser.add_argument("--epochs", type=int, default=50, help="Total training epochs")
+    # Defaults below are calibrated for the one-row-per-document dataset
+    # (~3800 train docs, see prepare_splits.py) on a 192GB card: batch_size
+    # 256 needs no grad_accum, which puts steps/epoch around 15 -- so epochs/
+    # warmup_steps/eval_steps are scaled up from their old chunk-dataset
+    # values (steps/epoch was ~114 before one-row-per-document) to land in
+    # the same ballpark of total steps and a comparable eval cadence
+    # (~every 3 epochs) rather than evaluating every 27 epochs or spending
+    # the whole run on warmup. Override all five together if you change
+    # --batch_size or train on a differently-sized dataset.
+    parser.add_argument("--epochs", type=int, default=400, help="Total training epochs")
     parser.add_argument(
-        "--train_bs", type=int, default=16, help="Training batch size per device"
+        "--batch_size", type=int, default=256, help="Batch size per device (train and eval)"
     )
     parser.add_argument(
-        "--eval_bs", type=int, default=16, help="Evaluation batch size per device"
-    )
-    parser.add_argument(
-        "--grad_accum", type=int, default=4, help="Gradient accumulation steps"
+        "--grad_accum", type=int, default=1, help="Gradient accumulation steps"
     )
     parser.add_argument("--lr", type=float, default=1e-4, help="Peak learning rate")
     parser.add_argument(
-        "--warmup_steps", type=int, default=1000, help="Linear warmup steps"
+        "--warmup_steps", type=int, default=150, help="Linear warmup steps"
     )
     parser.add_argument(
-        "--eval_steps", type=int, default=400, help="Steps between evaluations"
+        "--eval_steps", type=int, default=45, help="Steps between evaluations"
     )
     parser.add_argument(
         "--early_stopping_patience_epochs",
@@ -1151,12 +1166,23 @@ def main() -> None:
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for reproducibility"
     )
+    parser.add_argument(
+        "--num_workers", type=int, default=16, help="Dataloader worker processes"
+    )
 
     # Speed and Memory Optimizations
     parser.add_argument(
         "--torch_compile",
+        dest="torch_compile",
         action="store_true",
-        help="Compile model via torch.compile (requires PyTorch 2.0+)",
+        default=True,
+        help="Compile model via torch.compile (requires PyTorch 2.0+) (default: enabled)",
+    )
+    parser.add_argument(
+        "--no_torch_compile",
+        dest="torch_compile",
+        action="store_false",
+        help="Disable torch.compile",
     )
     parser.add_argument(
         "--gradient_checkpointing",
@@ -1263,8 +1289,15 @@ def main() -> None:
         log.info(
             "🚀 Hardware BF16 support detected (MI300X/Ampere+)! Enabling BF16 and TF32."
         )
+        # TF32 is an NVIDIA Ampere+ tensor-core format with no AMD equivalent;
+        # torch.backends.cudnn is a CUDA/cuDNN construct that may not carry
+        # the allow_tf32 attribute on ROCm builds (MIOpen backend) -- guard
+        # so this doesn't crash training start on MI300X.
         torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
+        if hasattr(torch.backends, "cudnn") and hasattr(
+            torch.backends.cudnn, "allow_tf32"
+        ):
+            torch.backends.cudnn.allow_tf32 = True
         auto_bf16 = True
         auto_fp16 = False
     else:
@@ -1285,6 +1318,8 @@ def main() -> None:
         unk_geometric_p=args.unk_geometric_p,
         span_mask_eval_len=args.span_mask_eval_len,
         edge_prob=args.edge_prob,
+        crop_max_len=args.max_len,
+        crop_min_len=args.crop_min_len,
     )
     if args.torch_compile:
         # Pin every batch to a fixed shape so torch.compile traces one graph
@@ -1311,8 +1346,8 @@ def main() -> None:
     training_args = TrainingArguments(
         output_dir=str(checkpoint_dir),
         num_train_epochs=args.epochs,
-        per_device_train_batch_size=args.train_bs,
-        per_device_eval_batch_size=args.eval_bs,
+        per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
         eval_strategy="steps",
         eval_steps=args.eval_steps,
@@ -1326,7 +1361,7 @@ def main() -> None:
         bf16=auto_bf16,
         weight_decay=0.01,
         max_grad_norm=1.0,
-        dataloader_num_workers=4,
+        dataloader_num_workers=args.num_workers,
         gradient_checkpointing=args.gradient_checkpointing,
         torch_compile=args.torch_compile,
         optim=args.optim,
@@ -1359,7 +1394,7 @@ def main() -> None:
         # using the actual steps-per-epoch for this run (dataset size / batch
         # size / grad accumulation all affect how many evals happen per epoch).
         updates_per_epoch = math.ceil(
-            math.ceil(len(dataset["train"]) / args.train_bs) / args.grad_accum
+            math.ceil(len(dataset["train"]) / args.batch_size) / args.grad_accum
         )
         evals_per_epoch = max(1, round(updates_per_epoch / args.eval_steps))
         patience = max(1, round(evals_per_epoch * args.early_stopping_patience_epochs))

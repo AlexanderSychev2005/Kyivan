@@ -12,8 +12,10 @@ import torch
 
 try:
     from .vocab_categories import maskable_ids as compute_maskable_ids  # package-style import
+    from .vocab_categories import tokenize_text  # package-style import
 except ImportError:
     from vocab_categories import maskable_ids as compute_maskable_ids  # script-mode import
+    from vocab_categories import tokenize_text  # script-mode import
 
 
 class KyivanPhysicalCollatorV2:
@@ -30,6 +32,8 @@ class KyivanPhysicalCollatorV2:
         mode: str = "train",
         date_bins: int = 20,
         pad_to_len: Optional[int] = None,
+        crop_max_len: Optional[int] = None,
+        crop_min_len: int = 256,
     ) -> None:
         """
         Args:
@@ -50,6 +54,19 @@ class KyivanPhysicalCollatorV2:
             mode: 'train' or 'valid' -- selects the masking regime.
             date_bins: width of the date-distribution placeholder used for
                 examples with no date label (must match the model's num_date_bins).
+            crop_max_len: if set, documents longer than this get a fresh
+                random crop drawn on every call (Aeneas's dataloader.py does
+                the same thing for the same reason -- prepare_splits.py no
+                longer pre-chunks long documents, so this is what keeps a
+                496k-character source from ever showing up as a single
+                1024-token example. In 'train' mode the crop length is
+                itself randomized between crop_min_len and crop_max_len; in
+                'valid' mode it's always crop_max_len (fixed length, random
+                position only), so eval example count/composition stays
+                stable across evaluations.
+            crop_min_len: lower bound for the randomized train-mode crop
+                length. Ignored in 'valid' mode and when the document is
+                already <= crop_max_len.
         """
         self.vocab = char_vocab
         self.pad_id = char_vocab["[PAD]"]
@@ -71,6 +88,8 @@ class KyivanPhysicalCollatorV2:
         # recompiling (or hitting stale-cache shape mismatches) every time
         # the per-batch max length changes.
         self.pad_to_len = pad_to_len
+        self.crop_max_len = crop_max_len
+        self.crop_min_len = crop_min_len
 
         # Special (bracket-wrapped) tokens are always protected.
         self.special_ids = {
@@ -157,7 +176,26 @@ class KyivanPhysicalCollatorV2:
                 return positions, span_len > 1
         return None
 
+    def _maybe_crop(self, tokens: List[int]) -> List[int]:
+        """Fresh random window for documents longer than crop_max_len --
+        called before the [SOS] prepend below, so `tokens` here is still the
+        raw document body. Aeneas's dataloader.py does the same thing
+        (random length + random start in train mode, fixed max length +
+        random start in eval mode) for the same reason: one row per document
+        in the dataset, with coverage of long documents coming from varying
+        crops across epochs instead of a fixed set of pre-computed chunks."""
+        if self.crop_max_len is None or len(tokens) <= self.crop_max_len:
+            return tokens
+        if self.mode == "train":
+            lo = min(self.crop_min_len, self.crop_max_len)
+            crop_len = random.randint(lo, self.crop_max_len)
+        else:
+            crop_len = self.crop_max_len
+        start = random.randint(0, len(tokens) - crop_len)
+        return tokens[start : start + crop_len]
+
     def _process_one(self, tokens: List[int]) -> tuple:
+        tokens = self._maybe_crop(tokens)
         if tokens[0] != self.sos_id:
             tokens = [self.sos_id] + tokens
 
@@ -250,7 +288,8 @@ class KyivanPhysicalCollatorV2:
         b_labels_unk = []
 
         for f in features:
-            tokens, labels_res, labels_unk = self._process_one(list(f["input_ids"]))
+            raw_ids = f["input_ids"] if "input_ids" in f else tokenize_text(f["text"], self.vocab)
+            tokens, labels_res, labels_unk = self._process_one(list(raw_ids))
             b_input_ids.append(tokens)
             b_labels_res.append(labels_res)
             b_labels_unk.append(labels_unk)

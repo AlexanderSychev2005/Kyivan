@@ -1,7 +1,7 @@
 import argparse
 import os
 import json
-from datasets import load_from_disk
+from datasets import DatasetDict, load_from_disk
 from huggingface_hub import HfApi
 
 
@@ -42,15 +42,25 @@ def main():
     api = HfApi()
 
     print(f"Pushing dataset to https://huggingface.co/datasets/{args.repo_id} ...")
-    for split_name, split_ds in ds.items():
-        # test_b carries pre-computed "labels" (real historical lacunae) while
-        # train/eval/test_a don't (masked dynamically by the collator at load
-        # time) -- the Hub requires matching features across splits of the
-        # same config, so test_b gets its own config.
-        config_name = "test_b" if split_name == "test_b" else "default"
-        print(f"Pushing split '{split_name}' (config '{config_name}')...")
-        split_ds.push_to_hub(
-            args.repo_id, config_name=config_name, split=split_name, token=args.token
+    # test_b carries pre-computed "labels" (real historical lacunae) while
+    # train/eval/test_a don't (tokenized + masked on the fly at load time) --
+    # the Hub requires matching features across splits of the same config, so
+    # test_b gets its own config. The default-config splits are pushed as one
+    # DatasetDict rather than one push_to_hub() call per split: pushing them
+    # individually compares each new split's schema against whatever's
+    # already on the Hub for the *other* splits, which fails the moment the
+    # schema itself changes (e.g. input_ids -> text) since the old splits
+    # haven't been overwritten yet at the point the first new split is
+    # compared.
+    default_splits = DatasetDict(
+        {k: v for k, v in ds.items() if k != "test_b"}
+    )
+    print(f"Pushing default config ({list(default_splits.keys())})...")
+    default_splits.push_to_hub(args.repo_id, config_name="default", token=args.token)
+    if "test_b" in ds:
+        print("Pushing split 'test_b' (config 'test_b')...")
+        ds["test_b"].push_to_hub(
+            args.repo_id, config_name="test_b", split="test_b", token=args.token
         )
 
     # 2. Upload the tokenizer file to the same repository
@@ -75,7 +85,7 @@ def main():
             token=args.token,
         )
 
-    print("\n✅ Successfully pushed dataset and tokenizer to Hugging Face Hub! 🎉")
+    print("\nSuccessfully pushed dataset and tokenizer to Hugging Face Hub!")
     print(
         f"You can view your dataset here: https://huggingface.co/datasets/{args.repo_id}"
     )

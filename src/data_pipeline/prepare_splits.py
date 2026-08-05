@@ -15,6 +15,7 @@ from sklearn.model_selection import train_test_split
 # same masking policy as the training-time collator: punctuation is never
 # masked or scored as a restoration target.
 from src.model.vocab_categories import is_maskable_char as _is_maskable_char
+from src.model.vocab_categories import tokenize_text
 
 
 def load_data(path):
@@ -29,48 +30,6 @@ def load_data(path):
 DIALECT_MAP = {"OES": 0, "CS": 1, "NW": 2, "SW": 3}
 ROUND_PAT = re.compile(r"\(([^)]+)\)")
 SQUARE_PAT = re.compile(r"\[(?!(?:GAP|MASK|PAD|UNK|SOS|#|-)\])([^\]]+)\]")
-
-
-def chunk_text(text, max_len=512, stride=256):
-    chunks = []
-    text_len = len(text)
-    if text_len <= max_len:
-        return [text]
-    for i in range(0, text_len, stride):
-        chunk = text[i : i + max_len]
-        chunks.append(chunk)
-        if i + max_len >= text_len:
-            break
-    return chunks
-
-
-def tokenize_text(text, vocab):
-    tokens = []
-    i = 0
-    text_len = len(text)
-    unk_id = vocab.get("[UNK]", 1)
-
-    while i < text_len:
-        if text[i] == "[":
-            end = text.find("]", i)
-            if end != -1:
-                special = text[i : end + 1]
-                if special in vocab:
-                    tokens.append(vocab[special])
-                    i = end + 1
-                    continue
-        # The vocab is lowercase-only (build_char_tokenizer.py case-folds
-        # when counting) -- fold here too, so an uppercase occurrence in raw
-        # text still resolves to its vocab entry instead of falling back to
-        # [UNK]. Stored text fields (original_text/text_with_missing) keep
-        # their original case; only the token ids are folded.
-        char = text[i].lower()
-        if char in vocab:
-            tokens.append(vocab[char])
-        else:
-            tokens.append(unk_id)
-        i += 1
-    return tokens
 
 
 def process_test_b_line(line, vocab):
@@ -203,14 +162,12 @@ def main():
     docs = list(load_data("prepared_datasets/final_dataset.jsonl"))
 
     # All 76 Ostrog Bible books share the exact same date (1581) and dialect
-    # (CS) label, and whole-book chunking blows that up into ~22% of all
-    # training chunks -- a huge, maximally homogeneous slice of the date/
-    # region training signal from one source. Risk: the date/region heads
-    # learn a shortcut ("this lexical fingerprint -> CS, 1581") instead of
-    # something that generalizes, rather than any genuine overfitting on the
+    # (CS) label -- a large, maximally homogeneous slice of the date/region
+    # training signal from one source. Risk: the date/region heads learn a
+    # shortcut ("this lexical fingerprint -> CS, 1581") instead of something
+    # that generalizes, rather than any genuine overfitting on the
     # restoration task itself (which is unaffected either way, since the text
-    # stays in train regardless). Masked at the whole-book level (not per
-    # chunk) so every chunk of a given book is consistently labeled or not.
+    # stays in train regardless).
     ostrog_ids = sorted(
         doc["doc_id"] for doc in docs if doc["doc_id"].startswith("bible_ostrog_")
     )
@@ -247,28 +204,39 @@ def main():
             date_target = doc.get("date_target")
             dialect_id = DIALECT_MAP.get(doc.get("macro_dialect"))
 
-        # Create metadata without the massive full text to avoid MemoryError when duplicating across chunks
         meta_doc = {k: v for k, v in doc.items() if k != "text"}
         meta_json = json.dumps(meta_doc, ensure_ascii=False)
 
-        chunks = chunk_text(text, max_len=1024, stride=512)
-        for c in chunks:
-            input_ids = tokenize_text(c, vocab)
-            if len(input_ids) > 0:
-                records.append(
-                    {
-                        "input_ids": input_ids,
-                        "attention_mask": [1]
-                        * len(input_ids),  # Needed for HF, overridden by collator
-                        "date_labels": date_target,
-                        "region_labels": dialect_id,
-                        "original_text": c,
-                        "metadata": meta_json,
-                    }
-                )
+        # One record per document -- no pre-chunking. Long documents used to
+        # be split into many overlapping fixed windows here, which multiplied
+        # a handful of very long sources (chronicles, Bible books) into a
+        # hugely disproportionate share of "training examples" relative to
+        # short sources like birchbark (a 496k-character document alone
+        # produced ~970 overlapping chunks under the old stride=512 scheme).
+        # Aeneas instead keeps one row per document and draws a fresh random
+        # crop at training time (see train/dataloader.py in predictingthepast)
+        # -- KyivanPhysicalCollatorV2._maybe_crop reproduces that here, so a
+        # document's share of the dataset now matches its share of real
+        # documents, and long documents still get full coverage over many
+        # epochs via varying random crops rather than a fixed set of slices.
+        # Stored as plain text, not pre-tokenized ids -- tokenize_text is a
+        # cheap pure-Python char lookup, so there's no reason to bake it into
+        # the pushed dataset. Keeps the Hub copy human-readable/inspectable
+        # and independent of any future vocab changes; collator_v2.py
+        # tokenizes on the fly (see KyivanPhysicalCollatorV2.__call__).
+        if len(text) > 0:
+            records.append(
+                {
+                    "text": text,
+                    "date_labels": date_target,
+                    "region_labels": dialect_id,
+                    "original_text": text,
+                    "metadata": meta_json,
+                }
+            )
 
     print(f"Excluded {overlap_count} documents due to Test B overlap.")
-    print(f"Total chunks created for Train/Test A: {len(records)}")
+    print(f"Total documents for Train/Test A: {len(records)}")
 
     # -1 stands in for None (masked-label Ostrog chunks) purely so
     # train_test_split's stratify can sort/compare classes; the real None
@@ -287,9 +255,9 @@ def main():
         holdout_records, test_size=0.5, random_state=42, stratify=holdout_labels
     )
 
-    print(f"Train chunks: {len(train_records)}")
-    print(f"Eval chunks: {len(eval_records)}")
-    print(f"Test A chunks: {len(test_a_records)}")
+    print(f"Train documents: {len(train_records)}")
+    print(f"Eval documents: {len(eval_records)}")
+    print(f"Test A documents: {len(test_a_records)}")
 
     # ---------------------------------------------------------
     # EXPORT METADATA JSON FOR SPLITS
@@ -340,7 +308,12 @@ def main():
     # CREATE HF DATASET
     # ---------------------------------------------------------
     def strip_export_fields(recs):
+        # train/eval/test_a rows carry "text" (tokenized on the fly at
+        # training time); test_b rows carry pre-tokenized "input_ids" +
+        # "attention_mask" + "labels" instead, since its masking is derived
+        # once from real editorial brackets, not regenerated per epoch.
         allowed = {
+            "text",
             "input_ids",
             "attention_mask",
             "labels",

@@ -1048,7 +1048,7 @@ def main() -> None:
     parser.add_argument(
         "--char_mask_rate_max",
         type=float,
-        default=0.4,
+        default=0.18,
         help="v2 collator: upper bound of the per-example uniform sampling "
         "range for the overall character-masking rate.",
     )
@@ -1134,12 +1134,12 @@ def main() -> None:
     )
 
     parser.add_argument(
-        "--max_len", type=int, default=1024, help="Maximum sequence length"
+        "--max_len", type=int, default=512, help="Maximum sequence length"
     )
     parser.add_argument(
         "--crop_min_len",
         type=int,
-        default=256,
+        default=128,
         help="Lower bound for the randomized train-time crop length applied "
         "to documents longer than --max_len (see "
         "KyivanPhysicalCollatorV2._maybe_crop). Eval/test_a always crop to "

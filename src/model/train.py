@@ -1122,14 +1122,20 @@ def main() -> None:
 
     # Defaults below are calibrated for the one-row-per-document dataset
     # (~3800 train docs, see prepare_splits.py) on a 192GB card: batch_size
-    # 256 needs no grad_accum, which puts steps/epoch around 15 -- so epochs/
-    # warmup_steps/eval_steps are scaled up from their old chunk-dataset
-    # values (steps/epoch was ~114 before one-row-per-document) to land in
-    # the same ballpark of total steps and a comparable eval cadence
-    # (~every 3 epochs) rather than evaluating every 27 epochs or spending
-    # the whole run on warmup. Override all five together if you change
-    # --batch_size or train on a differently-sized dataset.
-    parser.add_argument("--epochs", type=int, default=400, help="Total training epochs")
+    # 256 needs no grad_accum, which puts steps/epoch around 15. An earlier
+    # version of this calibration (epochs=400/warmup=150) matched the old
+    # chunk-dataset's total step count, but early stopping tripped at ~360
+    # steps (6% of that 6000-step schedule) with the cosine LR scheduler
+    # still near its peak value (warmup_steps=150 alone was 42% of the steps
+    # actually run) -- restore accuracy plateaued while region/date kept
+    # improving, consistent with the harder task needing the LR-decay phase
+    # the schedule never reached. epochs=150 (2250 steps) gives ~6x the room
+    # past that observed plateau point for cosine decay to actually happen;
+    # warmup_steps=100 is a fixed, modest step count rather than a
+    # percentage, so it stays short in absolute terms even as epochs is
+    # tuned further. Override all five together if you change --batch_size
+    # or train on a differently-sized dataset.
+    parser.add_argument("--epochs", type=int, default=150, help="Total training epochs")
     parser.add_argument(
         "--batch_size", type=int, default=256, help="Batch size per device (train and eval)"
     )
@@ -1138,7 +1144,7 @@ def main() -> None:
     )
     parser.add_argument("--lr", type=float, default=1e-4, help="Peak learning rate")
     parser.add_argument(
-        "--warmup_steps", type=int, default=150, help="Linear warmup steps"
+        "--warmup_steps", type=int, default=100, help="Linear warmup steps"
     )
     parser.add_argument(
         "--eval_steps", type=int, default=45, help="Steps between evaluations"

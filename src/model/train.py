@@ -1152,9 +1152,15 @@ def main() -> None:
     parser.add_argument(
         "--early_stopping_patience_epochs",
         type=float,
-        default=3,
+        default=0,
         help="Stop training if eval top1_accuracy hasn't improved for this "
-        "many epochs' worth of evaluations. Set to 0 to disable.",
+        "many epochs' worth of evaluations. Set to 0 to disable (default) --"
+        "load_best_model_at_end already restores the best-eval checkpoint "
+        "regardless, and the epochs/warmup_steps schedule is tuned assuming "
+        "the full run completes so the LR actually decays; stopping early "
+        "cuts that decay phase short. Re-enable with a real patience value "
+        "if you specifically want to save compute on a run that's clearly "
+        "diverged rather than just plateaued.",
     )
     parser.add_argument(
         "--fp16",

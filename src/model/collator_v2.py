@@ -139,7 +139,12 @@ class KyivanPhysicalCollatorV2:
         (our addition) or a random-position gap (Aeneas's
         inject_missing_unk). Returns (positions, is_multi_char) or None."""
         if random.random() < self.edge_prob and len(tokens) > 10:
-            edge_len = random.randint(2, 5)
+            # birchbark's own raw hyphen-run gaps (known-length damage, before
+            # compression to a single [UNK]) run 2-23 chars, mean ~5 -- and
+            # those are the *measurable* minority (247 of 2276 gap markers);
+            # the other 89% are ellipsis (unknown length), so a torn-edge
+            # gap is realistically at least this wide, often wider.
+            edge_len = random.randint(2, 20)
             if random.random() < 0.5:
                 start = 1
                 while start < len(tokens) and tokens[start] in self.special_ids:

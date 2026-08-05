@@ -1070,7 +1070,7 @@ def main() -> None:
     parser.add_argument(
         "--unk_geometric_p",
         type=float,
-        default=0.25,
+        default=0.1,
         help="v2 collator: geometric-distribution parameter for the single "
         "compressed unknown-length `[#]` gap's length (sampled as "
         "geometric(p) - 1, so ~p of examples get no gap at all).",

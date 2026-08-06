@@ -1,0 +1,95 @@
+tom 1: 7 works
+  [1/6] 'Поучения и молитва Феодосия Печерского': skip (no-genre-word-likely-essay)
+tom 2: 17 works
+tom 3: 25 works
+tom 4: 15 works
+  [4/15] 'Берестяные грамоты': skip (no-genre-word-likely-essay)
+tom 5: 20 works
+tom 6: 29 works
+tom 7: 20 works
+  [7/16] 'Послание Геннадия Иоасафу': skip (star-failed-orthocheck)
+tom 8: 11 works
+  [8/5] 'Из славянского перевода корпуса сочинений Дионисия Ареопагита с толкованиями Максима Исповедника': skip (no-genre-word-likely-essay)
+  [8/6] 'Из славянского перевода корпуса сочинений Дионисия Ареопагита с толкованиями Максима Исповедника': skip (compilation-34-h2-needs-review)
+  [8/8] 'Из «Диоптры» Филиппа пустынника. Разговор души и плоти': skip (star-failed-orthocheck)
+tom 9: 25 works
+tom 10: 12 works
+  [10/2] 'Хождение на Восток гостя Василия Познякова с товарищи': skip (compilation-10-h2-needs-review)
+  [10/5] 'Из «Измарагда»': skip (compilation-14-h2-needs-review)
+  [10/6] 'Домострой': 126408 chars
+  [10/8] 'Об умствованиях Косого (из «многословного послания»)': skip (compilation-4-h2-needs-review)
+  [10/9] 'Казанская история': skip (compilation-102-h2-needs-review)
+  [10/10] 'Сказание въкратце от начала царства Казанского и о бранех, и о победах великих князей московских со цари казаньскими, и о взятие царства казани, еже ново бысть': 314608 chars
+  [10/11] 'Троицкая повесть о взятии Казани': skip (compilation-16-h2-needs-review)
+  [10/12] 'Чаши государевы заздравные': skip (compilation-8-h2-needs-review)
+tom 11: 4 works
+tom 12: 44 works
+  [12/29] 'Из Степенной книги царского родословия': skip (no-genre-word-likely-essay)
+  [12/30] 'Повествование о святом благочестии первых российских властодержцев': skip (no-genre-word-likely-essay)
+  [12/33] 'О благоверном и богохранимом великом князе Георгии-Ярославе Владимировиче': skip (no-genre-word-likely-essay)
+  [12/35] 'О преславном великом князе Владимирском и всея Руси Всеволоде Георгиевиче': skip (no-genre-word-likely-essay)
+  [12/36] 'О благоверном и богохранимом прямом наследнике великом князе Ярославе Всеволодовиче': skip (no-genre-word-likely-essay)
+  [12/38] 'О великом князе Данииле Александровиче Московском': skip (no-genre-word-likely-essay)
+  [12/39] 'О великом князе Иване Даниловиче': skip (no-genre-word-likely-essay)
+  [12/40] 'О житии и подвигах... великого князя и царя русского Димитрия Ивановича': skip (no-genre-word-likely-essay)
+  [12/41] 'О... великом князе Иване Васильевиче, государе и самодержце всея Росии': skip (no-genre-word-likely-essay)
+  [12/42] 'Краткая похвала самодержцу Василию и о пострижении его и чудесном отшествии к Богу': skip (no-genre-word-likely-essay)
+  [12/43] 'О благородном и боговенчанном царе и государе великом князе Иване Васильевиче': skip (no-genre-word-likely-essay)
+tom 13: 22 works
+  [13/11] 'Рассказ Вассиана Кошки о последних днях и преставлении тверского епископа Акакия': skip (star-failed-orthocheck)
+tom 14: 20 works
+  [14/11] 'Повесть о видении во Владимире в 1611 году': skip (star-failed-orthocheck)
+tom 15: 46 works
+  [15/17] 'Предание об основании Москвы Олегом': skip (no-genre-word-likely-essay)
+  [15/21] 'Повесть о семи мудрецах': skip (compilation-16-h2-needs-review)
+  [15/43] 'Песни, записанные для Ричарда Джеймса в 1619–1620 гг.': skip (compilation-6-h2-needs-review)
+  [15/45] 'Песни П.А. Самарина-Квашнина': skip (no-genre-word-likely-essay)
+  [15/46] 'Комментарии': skip (compilation-46-h2-needs-review)
+tom 16: 9 works
+  [16/1] '«Смеховой мир» Древней Руси': skip (no-genre-word-likely-essay)
+  [16/8] 'Басни Эзопа в переводе Ф. К. Гозвинского': skip (no-genre-word-likely-essay)
+  [16/9] '«Зрелище жития человеческого» – сборник басен в переводе А. А. Виниуса': skip (no-genre-word-likely-essay)
+tom 17: 19 works
+  [17/1] 'Литература раннего старообрядчества как историческое свидетельство': skip (no-genre-word-likely-essay)
+  [17/2] 'Из сборника «Старчество»12': skip (no-genre-word-likely-essay)
+  [17/3] '«Своеручная хартия» и житие Елеазара Анзерского300': skip (no-genre-word-likely-essay)
+  [17/5] 'Сочинения протопопа Аввакума440': skip (compilation-44-h2-needs-review)
+  [17/9] 'Письма Е. П. Урусовой2540': skip (no-genre-word-likely-essay)
+  [17/10] 'Сочинения царя Алексея Михайловича2554': 44453 chars
+  [17/11] 'Урядник сокольничего пути2728': skip (no-genre-word-likely-essay)
+  [17/12] 'Сочинения инока Авраамия2791': 45366 chars
+  [17/13] 'Письма и послания дьякона Фёдора Иванова2935': skip (no-genre-word-likely-essay)
+  [17/18] 'Круг  произведений, посвящённый Анне Кашинской 3455': skip (compilation-6-h2-needs-review)
+  [17/19] 'Комментарии': skip (no-genre-word-likely-essay)
+tom 18: 3 works
+  [18/1] 'Первые опыты книжного стихотворства': skip (no-genre-word-likely-essay)
+  [18/2] 'Стихотворения': skip (no-genre-word-likely-essay)
+  [18/3] 'Переводная поэзия1309': skip (compilation-26-h2-needs-review)
+tom 19: 23 works
+  [19/1] 'Литература Выговского старообрядческого общежительства': skip (no-genre-word-likely-essay)
+  [19/2] 'Петр Прокопьев': skip (no-genre-word-likely-essay)
+  [19/3] 'Андрей Денисов': skip (compilation-36-h2-needs-review)
+  [19/4] 'Семен Денисов': skip (compilation-32-h2-needs-review)
+  [19/5] 'Леонтий Федосеев': skip (no-genre-word-likely-essay)
+  [19/7] 'Плач Церкви над пастырем': skip (compilation-6-h2-needs-review)
+  [19/9] 'Алексеи Иродионов': skip (no-genre-word-likely-essay)
+  [19/10] 'Гавриил Семенов': skip (no-genre-word-likely-essay)
+  [19/11] 'Анонимные сочинения первой половины XVIII в.': skip (compilation-20-h2-needs-review)
+  [19/12] 'Даниил Матвеев': skip (compilation-10-h2-needs-review)
+  [19/13] 'Иван Филиппов': skip (compilation-4-h2-needs-review)
+  [19/14] 'Василий Данилов Шапошников': skip (no-genre-word-likely-essay)
+  [19/15] 'Мануил Петров': skip (no-genre-word-likely-essay)
+  [19/16] 'Козма Иванов': skip (no-genre-word-likely-essay)
+  [19/17] 'Андрей Борисов': skip (compilation-6-h2-needs-review)
+  [19/18] 'Тимофей Андреев': skip (no-genre-word-likely-essay)
+  [19/19] 'Софья Данилова': skip (no-genre-word-likely-essay)
+  [19/20] 'Федор Петрович Бабушкин': skip (no-genre-word-likely-essay)
+  [19/21] 'Анонимные сочинения второй половины XVIII–первой четверти XIX в. Историческая повесть о роде купцов Долгих': skip (compilation-10-h2-needs-review)
+  [19/22] 'Выго-Лексинский летописец': skip (no-genre-word-likely-essay)
+  [19/23] 'Библиотека литературы Древней Руси. Том 19 (XVIII век)': skip (no-genre-word-likely-essay)
+tom 20: 10 works
+  [20/6] 'Видения потустороннего мира': skip (no-genre-word-likely-essay)
+  [20/8] 'Паломнические путешествия на Святую землю': skip (compilation-10-h2-needs-review)
+  [20/10] 'Комментарии': skip (compilation-12-h2-needs-review)
+
+Total works saved: 312 -> C:\Programming\kyivan\data\bldr_azbyka\bldr_all.jsonl

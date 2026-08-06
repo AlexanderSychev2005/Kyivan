@@ -7,6 +7,5 @@ novgorodets
 checkpoints
 runs/
 test_eval_datasets/
-data/
 prepared_datasets/
 human_readable_datasets/

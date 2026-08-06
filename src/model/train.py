@@ -331,10 +331,10 @@ class KyivanTrainer(Trainer):
         self.eval_data_collator = eval_data_collator
         # 0.0 = uniform (one document = one row = equal weight, the previous
         # behavior). >0.0 weights each row by len(text)**sampling_power, so
-        # the ~80% of train rows that are short fragments (birchbark/nkrya/
-        # epigraphica, median well under crop_min_len) stop crowding out the
-        # ~6% of rows that are long-form sources (sofia/bible_ostrog/torot/
-        # pushkin) carrying ~84% of the corpus's actual characters.
+        # the many short-fragment rows (birchbark/epigraphica, median well
+        # under crop_min_len) stop crowding out the far fewer but much
+        # longer documents (NKRYA/UD Ruthenian/RNC) carrying most of the
+        # corpus's actual characters.
         self.sampling_power = sampling_power
 
         self.loss_weight_restore = loss_weight_restore
@@ -1242,12 +1242,12 @@ def main() -> None:
         default=0.5,
         help="Train-row sampling weight is len(text)**sampling_power (with "
         "replacement). 0.0 = uniform, one document = one row regardless of "
-        "length (the old behavior) -- with it, the ~80%% of train rows that "
-        "are short fragments (birchbark/nkrya/epigraphica) crowd out the "
-        "~6%% of rows (sofia/bible_ostrog/torot/pushkin) carrying ~84%% of "
-        "the corpus's characters. 1.0 = fully proportional to length; 0.5 "
-        "(sqrt) is a middle ground that boosts long documents without "
-        "silencing the short ones entirely.",
+        "length (the old behavior) -- with it, the many short-fragment rows "
+        "(birchbark/epigraphica) crowd out the far fewer but much longer "
+        "documents (NKRYA/UD Ruthenian/RNC) carrying most of the corpus's "
+        "characters. 1.0 = fully proportional to length; 0.5 (sqrt) is a "
+        "middle ground that boosts long documents without silencing the "
+        "short ones entirely.",
     )
 
     parser.add_argument(
@@ -1263,7 +1263,7 @@ def main() -> None:
         "the fixed --max_len instead.",
     )
     parser.add_argument(
-        "--hidden_size", type=int, default=384, help="Hidden dimension size"
+        "--hidden_size", type=int, default=224, help="Hidden dimension size"
     )
     parser.add_argument(
         "--num_layers", type=int, default=16, help="Number of encoder layers"

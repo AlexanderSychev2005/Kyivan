@@ -8,9 +8,7 @@ def assemble():
     input_files = [
         f
         for f in glob.glob("prepared_datasets/*_prepared.jsonl")
-        if "epigraphica_classes" not in f
-        and "birchbark_classes" not in f
-        and "byliny_prepared.jsonl" not in f
+        if "epigraphica_classes" not in f and "birchbark_classes" not in f
     ]
     all_docs = []
 

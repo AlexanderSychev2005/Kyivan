@@ -196,24 +196,6 @@ def main():
     print("Loading final_dataset.jsonl...")
     docs = list(load_data("prepared_datasets/final_dataset.jsonl"))
 
-    # All 76 Ostrog Bible books share the exact same date (1581) and dialect
-    # (CS) label -- a large, maximally homogeneous slice of the date/region
-    # training signal from one source. Risk: the date/region heads learn a
-    # shortcut ("this lexical fingerprint -> CS, 1581") instead of something
-    # that generalizes, rather than any genuine overfitting on the
-    # restoration task itself (which is unaffected either way, since the text
-    # stays in train regardless).
-    ostrog_ids = sorted(
-        doc["doc_id"] for doc in docs if doc["doc_id"].startswith("bible_ostrog_")
-    )
-    rng = random.Random(42)
-    n_masked = round(len(ostrog_ids) * 0.9)
-    masked_ostrog_ids = set(rng.sample(ostrog_ids, n_masked))
-    print(
-        f"Masking date/region labels for {len(masked_ostrog_ids)}/{len(ostrog_ids)} "
-        f"Ostrog Bible books (90%)."
-    )
-
     records = []
     overlap_count = 0
     for doc in docs:
@@ -223,21 +205,16 @@ def main():
             overlap_count += 1
             continue
 
-        if doc["doc_id"] in masked_ostrog_ids:
-            date_target = None
-            dialect_id = None
-        else:
-            # No defaults here: get_date_target already returns a real None
-            # (not [0.0]*20) for undated docs, and DIALECT_MAP.get(...)
-            # without a fallback returns None for both a missing
-            # macro_dialect and an unrecognized one (e.g. "Unknown", the
-            # catch-all get_macro_dialect returns for sources it doesn't
-            # know) -- both cases mean "no label", not "assume bin 0"/
-            # "assume OES", so they must reach the collator as None to be
-            # excluded from the date/region losses rather than silently
-            # mislabeled.
-            date_target = doc.get("date_target")
-            dialect_id = DIALECT_MAP.get(doc.get("macro_dialect"))
+        # No defaults here: get_date_target already returns a real None (not
+        # [0.0]*20) for undated docs, and DIALECT_MAP.get(...) without a
+        # fallback returns None for both a missing macro_dialect and an
+        # unrecognized one (e.g. "Unknown", the catch-all get_macro_dialect
+        # returns for sources it doesn't know) -- both cases mean "no
+        # label", not "assume bin 0"/"assume OES", so they must reach the
+        # collator as None to be excluded from the date/region losses
+        # rather than silently mislabeled.
+        date_target = doc.get("date_target")
+        dialect_id = DIALECT_MAP.get(doc.get("macro_dialect"))
 
         meta_doc = {k: v for k, v in doc.items() if k != "text"}
         meta_json = json.dumps(meta_doc, ensure_ascii=False)

@@ -56,12 +56,7 @@ def get_macro_dialect(dataset_name, dialect_str, file_source=""):
     dialect = str(dialect_str).lower()
     file_source = str(file_source).lower()
 
-    if dataset_name == "sofia":
-        return "CS"
-
     if dataset_name == "epigraphica":
-        return "CS"
-    if dataset_name == "bible_ostrog":
         return "CS"
     if dataset_name == "UD_Old_East_Slavic-Ruthenian":
         return "SW"
@@ -69,14 +64,6 @@ def get_macro_dialect(dataset_name, dialect_str, file_source=""):
         return "NW"
     if dataset_name == "UD_Old_East_Slavic-RNC":
         return "OES"
-    if dataset_name == "litopys":
-        return "OES"
-    if dataset_name == "bldr_azbyka":
-        # to_cleaned_json.py already classified CS vs OES per document from
-        # the work's title genre word (Житие/Служба/... vs everything
-        # else) -- respect that instead of collapsing the whole source to
-        # one bucket the way the hardcoded sources above do.
-        return dialect_str if dialect_str in ("CS", "OES") else "OES"
 
     if dataset_name == "NKRYA":
         if "pskov" in file_source or "novgorod" in file_source:
@@ -177,15 +164,6 @@ def process_datasets():
         ),
         ("pushkin_texts", "data/pushkin_texts/pushkin_texts.json"),
         ("torot", "data/TOROT/torot.json"),
-        ("sofia", "data/sofia/sofia_cleaned.json"),
-        ("bible_ostrog", "data/bible_ostrog/bible_ostrog.json"),
-        # No date/dialect metadata -- get_macro_dialect falls back to
-        # "Unknown" and get_date_target(None) returns None for docs with no
-        # "dialect"/"year" keys, both correctly excluded from the
-        # date/region losses downstream rather than mislabeled.
-        ("byliny", "data/byliny/byliny.json"),
-        ("bldr_azbyka", "data/bldr_azbyka/bldr_azbyka_cleaned.json"),
-        ("litopys", "data/litopys/litopys_cleaned.json"),
     ]
 
     stats = {"CS": 0, "OES": 0, "NW": 0, "SW": 0, "Unknown": 0}
@@ -228,10 +206,7 @@ def process_datasets():
 
                 # Drop inscriptions/fragments too short to carry any signal
                 # ([UNK] gaps count as 1 char, not their 5-char spelling).
-                if (
-                    ds_name in ("epigraphica", "bible_ostrog")
-                    and visible_length(text) < 5
-                ):
+                if ds_name == "epigraphica" and visible_length(text) < 5:
                     continue
 
                 raw_year = doc.get("year", "")
@@ -242,14 +217,6 @@ def process_datasets():
                 macro_dialect = get_macro_dialect(ds_name, dialect, source)
                 interval = parse_year(raw_year)
                 target = get_date_target(interval)
-
-                # Prevent massive CS/1581 imbalance by clearing labels on 90% of Bible
-                import random
-
-                if ds_name == "bible_ostrog" and random.random() > 0.1:
-                    macro_dialect = "Unknown"
-                    target = [0.0] * 20
-                    interval = None
 
                 new_doc = {
                     "doc_id": doc_id,

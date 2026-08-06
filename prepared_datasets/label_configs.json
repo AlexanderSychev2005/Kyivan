@@ -1,0 +1,9 @@
+{
+    "DIALECT_MAP": {
+        "OES": 0,
+        "CS": 1,
+        "NW": 2,
+        "SW": 3
+    },
+    "DATE_BINS": "20 bins (class 0 to 19), 50 years each, covering 800 to 1800 AD"
+}

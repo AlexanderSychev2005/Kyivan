@@ -1,11 +1,9 @@
 __pycache__/
 .venv
 .python-version
-hf_dataset
 evaluation_results
 novgorodets
 checkpoints
 runs/
 test_eval_datasets/
-prepared_datasets/
 human_readable_datasets/

@@ -34,6 +34,7 @@ class KyivanPhysicalCollatorV2:
         pad_to_len: Optional[int] = None,
         crop_max_len: Optional[int] = None,
         crop_min_len: int = 256,
+        eval_seed: int = 42,
     ) -> None:
         """
         Args:
@@ -67,6 +68,13 @@ class KyivanPhysicalCollatorV2:
             crop_min_len: lower bound for the randomized train-mode crop
                 length. Ignored in 'valid' mode and when the document is
                 already <= crop_max_len.
+            eval_seed: in 'valid' mode, every random draw (crop position,
+                gap, span) is made with a random.Random/np.random.RandomState
+                seeded from this value XORed with a hash of the document's
+                own (pre-crop) tokens, instead of the shared global random
+                module -- so the same document gets the same masking on
+                every eval call, regardless of how much train-mode
+                randomness happened in between. Ignored in 'train' mode.
         """
         self.vocab = char_vocab
         self.pad_id = char_vocab["[PAD]"]
@@ -90,6 +98,7 @@ class KyivanPhysicalCollatorV2:
         self.pad_to_len = pad_to_len
         self.crop_max_len = crop_max_len
         self.crop_min_len = crop_min_len
+        self.eval_seed = eval_seed
 
         # Special (bracket-wrapped) tokens are always protected.
         self.special_ids = {
@@ -119,33 +128,38 @@ class KyivanPhysicalCollatorV2:
         return runs
 
     def _sample_span(
-        self, tokens: List[int], excluded: set, span_len: int
+        self, tokens: List[int], excluded: set, span_len: int, rng=random
     ) -> List[int]:
         """One random contiguous run of `span_len` maskable positions
-        (mirrors util_text.random_mask_span)."""
+        (mirrors util_text.random_mask_span). `rng` defaults to the shared
+        global `random` module (train mode); _process_one passes a
+        document-seeded random.Random instance in valid mode instead."""
         if span_len <= 0:
             return []
         runs = [r for r in self._maskable_runs(tokens, excluded) if r[1] - r[0] >= span_len]
         if not runs:
             return []
-        start, end = random.choice(runs)
-        span_start = random.randint(start, end - span_len)
+        start, end = rng.choice(runs)
+        span_start = rng.randint(start, end - span_len)
         return list(range(span_start, span_start + span_len))
 
     def _pick_compressed_gap(
-        self, tokens: List[int]
+        self, tokens: List[int], rng=random, np_rng=np.random
     ) -> Optional[tuple]:
         """The single compressed [#] gap for this example, if any: edge tear
         (our addition) or a random-position gap (Aeneas's
-        inject_missing_unk). Returns (positions, is_multi_char) or None."""
-        if random.random() < self.edge_prob and len(tokens) > 10:
+        inject_missing_unk). Returns (positions, is_multi_char) or None.
+        `rng`/`np_rng` default to the shared global random/np.random modules
+        (train mode); _process_one passes document-seeded instances in
+        valid mode instead."""
+        if rng.random() < self.edge_prob and len(tokens) > 10:
             # birchbark's own raw hyphen-run gaps (known-length damage, before
             # compression to a single [UNK]) run 2-23 chars, mean ~5 -- and
             # those are the *measurable* minority (247 of 2276 gap markers);
             # the other 89% are ellipsis (unknown length), so a torn-edge
             # gap is realistically at least this wide, often wider.
-            edge_len = random.randint(2, 20)
-            if random.random() < 0.5:
+            edge_len = rng.randint(2, 20)
+            if rng.random() < 0.5:
                 start = 1
                 while start < len(tokens) and tokens[start] in self.special_ids:
                     start += 1
@@ -159,7 +173,7 @@ class KyivanPhysicalCollatorV2:
 
         # Aeneas: span_len = geometric(p) - 1; a no-op (~p probability) is
         # expected and intentional, not an error.
-        span_len = int(np.random.geometric(self.unk_geometric_p)) - 1
+        span_len = int(np_rng.geometric(self.unk_geometric_p)) - 1
         if span_len <= 0:
             return None
         # Unlike the non-compressing span budget below, Aeneas places this
@@ -175,36 +189,53 @@ class KyivanPhysicalCollatorV2:
         # non-contiguous draw, so edge_prob/unk_geometric_p aren't
         # under-realized on documents with mid-text special tokens.
         for _ in range(50):
-            start_pos = random.randint(0, len(candidates) - span_len)
+            start_pos = rng.randint(0, len(candidates) - span_len)
             positions = candidates[start_pos : start_pos + span_len]
             if positions[-1] - positions[0] == span_len - 1:
                 return positions, span_len > 1
         return None
 
-    def _maybe_crop(self, tokens: List[int]) -> List[int]:
+    def _maybe_crop(self, tokens: List[int], rng=random) -> List[int]:
         """Fresh random window for documents longer than crop_max_len --
         called before the [SOS] prepend below, so `tokens` here is still the
         raw document body. Aeneas's dataloader.py does the same thing
         (random length + random start in train mode, fixed max length +
         random start in eval mode) for the same reason: one row per document
         in the dataset, with coverage of long documents coming from varying
-        crops across epochs instead of a fixed set of pre-computed chunks."""
+        crops across epochs instead of a fixed set of pre-computed chunks.
+        `rng` defaults to the shared global `random` module (train mode);
+        _process_one passes a document-seeded random.Random instance in
+        valid mode instead."""
         if self.crop_max_len is None or len(tokens) <= self.crop_max_len:
             return tokens
         if self.mode == "train":
             lo = min(self.crop_min_len, self.crop_max_len)
-            crop_len = random.randint(lo, self.crop_max_len)
+            crop_len = rng.randint(lo, self.crop_max_len)
         else:
             crop_len = self.crop_max_len
-        start = random.randint(0, len(tokens) - crop_len)
+        start = rng.randint(0, len(tokens) - crop_len)
         return tokens[start : start + crop_len]
 
     def _process_one(self, tokens: List[int]) -> tuple:
-        tokens = self._maybe_crop(tokens)
+        if self.mode == "valid":
+            # Deterministic per-document masking: seed a local RNG from the
+            # document's own (pre-crop) tokens instead of drawing from the
+            # shared global random/np.random state, which has already been
+            # advanced by an unpredictable number of train-mode calls by the
+            # time any given eval runs -- same document always gets the same
+            # crop/gap/span across every eval call, training run or process.
+            seed = self.eval_seed ^ hash(tuple(tokens))
+            rng = random.Random(seed)
+            np_rng = np.random.RandomState(seed & 0xFFFFFFFF)
+        else:
+            rng = random
+            np_rng = np.random
+
+        tokens = self._maybe_crop(tokens, rng=rng)
         if tokens[0] != self.sos_id:
             tokens = [self.sos_id] + tokens
 
-        gap = self._pick_compressed_gap(tokens)
+        gap = self._pick_compressed_gap(tokens, rng=rng, np_rng=np_rng)
         gap_positions = set(gap[0]) if gap else set()
         gap_is_multi = gap[1] if gap else False
 
@@ -215,9 +246,9 @@ class KyivanPhysicalCollatorV2:
         if self.mode == "valid":
             # Aeneas: exactly one span of random size 1..span_mask_eval_len,
             # non-compressing, no separate single-char budget.
-            eval_len = random.randint(1, self.span_mask_eval_len)
+            eval_len = rng.randint(1, self.span_mask_eval_len)
             for _ in range(1000):
-                span_budget_idx = self._sample_span(tokens, excluded, eval_len)
+                span_budget_idx = self._sample_span(tokens, excluded, eval_len, rng=rng)
                 if len(span_budget_idx) == eval_len:
                     break
         else:

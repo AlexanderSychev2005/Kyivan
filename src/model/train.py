@@ -1502,6 +1502,7 @@ def main() -> None:
         edge_prob=args.edge_prob,
         crop_max_len=args.max_len,
         crop_min_len=args.crop_min_len,
+        eval_seed=args.seed,
     )
     if args.torch_compile:
         # Pin every batch to a fixed shape so torch.compile traces one graph

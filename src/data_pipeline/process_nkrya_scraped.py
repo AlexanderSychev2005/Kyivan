@@ -6,9 +6,9 @@ import unicodedata
 from pathlib import Path
 
 # Paths
-NKRYA_DIR = Path("C:/Programming/kyivan/data/NKRYA/NKRYA_TEXTS")
-RNC_JSON = Path("C:/Programming/kyivan/data/UD_Old_East_Slavic-RNC/rnc_cleaned.json")
-OUTPUT_JSON = Path("C:/Programming/kyivan/data/NKRYA/nkrya_scraped_cleaned.json")
+NKRYA_DIR = Path("C:/Programming/kyivan/data/active/NKRYA/NKRYA_TEXTS")
+RNC_JSON = Path("C:/Programming/kyivan/data/active/UD_Old_East_Slavic-RNC/rnc_cleaned.json")
+OUTPUT_JSON = Path("C:/Programming/kyivan/data/active/NKRYA/nkrya_scraped_cleaned.json")
 
 # User's cleaning logic adapted
 PUNCT_MAP = {

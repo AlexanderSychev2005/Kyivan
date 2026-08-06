@@ -101,7 +101,7 @@ def build_target(original_text):
 
 
 def main():
-    with open("data/epigraphica/epigraphica_full_data.csv", "r", encoding="utf-8") as f:
+    with open("data/active/epigraphica/epigraphica_full_data.csv", "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         rows = list(reader)
 
@@ -146,10 +146,10 @@ def main():
     print(f"Skipped (non-Cyrillic): {skipped_non_cyrillic}")
     print(f"Written: {len(dataset)}")
 
-    with open("data/epigraphica/epigraphica.json", "w", encoding="utf-8") as f:
+    with open("data/active/epigraphica/epigraphica.json", "w", encoding="utf-8") as f:
         json.dump(dataset, f, ensure_ascii=False, indent=2)
 
-    print("Saved to data/epigraphica/epigraphica.json")
+    print("Saved to data/active/epigraphica/epigraphica.json")
 
 
 if __name__ == "__main__":

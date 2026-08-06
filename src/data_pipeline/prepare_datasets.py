@@ -155,15 +155,15 @@ def get_ngrams(text, n=5):
 
 def process_datasets():
     datasets = [
-        ("UD_Old_East_Slavic-RNC", "data/UD_Old_East_Slavic-RNC/rnc_cleaned.json"),
-        ("NKRYA", "data/NKRYA/nkrya_scraped_cleaned.json"),
-        ("epigraphica", "data/epigraphica/epigraphica.json"),
+        ("UD_Old_East_Slavic-RNC", "data/active/UD_Old_East_Slavic-RNC/rnc_cleaned.json"),
+        ("NKRYA", "data/active/NKRYA/nkrya_scraped_cleaned.json"),
+        ("epigraphica", "data/active/epigraphica/epigraphica.json"),
         (
             "UD_Old_East_Slavic-Ruthenian",
-            "data/UD_Old_East_Slavic-Ruthenian/ruthenian_cleaned.json",
+            "data/active/UD_Old_East_Slavic-Ruthenian/ruthenian_cleaned.json",
         ),
-        ("pushkin_texts", "data/pushkin_texts/pushkin_texts.json"),
-        ("torot", "data/TOROT/torot.json"),
+        ("pushkin_texts", "data/active/pushkin_texts/pushkin_texts.json"),
+        ("torot", "data/active/torot/torot.json"),
     ]
 
     stats = {"CS": 0, "OES": 0, "NW": 0, "SW": 0, "Unknown": 0}
@@ -236,13 +236,15 @@ def process_datasets():
                     # only pooled.
                     "source_dataset": ds_name,
                 }
+                # "original" is the diplomatic bracket-annotated reading --
+                # genuinely distinct from "text". No "target" key: every
+                # source that has one sets text = target upstream (see
+                # `text = doc.get("text", "") or doc.get("target", "")`
+                # above), so a normalized copy of it under "target" would
+                # just duplicate "text" itself in the pushed metadata.
                 if "original" in doc:
                     new_doc["original"] = normalize_historical_text(
                         doc["original"], keep_brackets=True
-                    )
-                if "target" in doc:
-                    new_doc["target"] = normalize_historical_text(
-                        doc["target"], keep_brackets=True
                     )
 
                 f_out.write(json.dumps(new_doc, ensure_ascii=False) + "\n")
@@ -251,47 +253,15 @@ def process_datasets():
         print(f"Prepared {ds_name} -> {out_path}")
 
     # Process birchbark
-    birch_path = "data/birchbark_classes.jsonl"
+    birch_path = "data/active/birchbark_classes.jsonl"
     if os.path.exists(birch_path):
-        out_path = "prepared_datasets/birchbark_classes_prepared.jsonl"
-        with (
-            open(birch_path, "r", encoding="utf-8") as f,
-            open(out_path, "w", encoding="utf-8") as f_out,
-        ):
-            for line in f:
-                if not line.strip():
-                    continue
-                doc = json.loads(line)
-
-                macro_dialect = "NW"
-                interval = doc.get("date_interval")
-                target = get_date_target(interval)
-
-                doc["macro_dialect"] = macro_dialect
-                doc["date_target"] = target
-                doc["source_dataset"] = "birchbark"
-                if "text" not in doc and "target" in doc:
-                    doc["text"] = doc["target"]
-
-                # Normalize + clean up newlines; birchbark keeps its () []
-                # (genuine reconstructed text).
-                for key in ["text", "target", "original", "masked"]:
-                    if key in doc and isinstance(doc[key], str):
-                        doc[key] = normalize_historical_text(
-                            birchbark_gap_fix(doc[key]), keep_brackets=True
-                        )
-
-                if visible_length(doc.get("text", "")) < 5:
-                    continue
-
-                f_out.write(json.dumps(doc, ensure_ascii=False) + "\n")
-                stats[macro_dialect] += 1
-        print(f"Prepared birchbark -> {out_path}")
-
-        # Same rows, flattened to the epigraphica_prepared.jsonl field layout
+        # Flattened to the epigraphica_prepared.jsonl field layout
         # (doc_id/text/macro_dialect/date_interval/date_target/date_number/
-        # category/original_dialect/original/target) instead of birchbark's
-        # own class-specific fields (masked/number/date/region/genre).
+        # category/original_dialect/original) instead of birchbark's own
+        # class-specific fields (masked/number/date/region/genre) -- no
+        # "target" key, same reasoning as the general loop above: it's
+        # always identical to "text" here (both come from the same
+        # doc.get("target", doc.get("original", "")) resolution).
         flat_out_path = "prepared_datasets/birchbark_prepared.jsonl"
         with (
             open(birch_path, "r", encoding="utf-8") as f,
@@ -331,34 +301,10 @@ def process_datasets():
                     "original_dialect": "birchbark",
                     "source_dataset": "birchbark",
                     "original": original,
-                    "target": target,
                 }
                 f_out.write(json.dumps(new_doc, ensure_ascii=False) + "\n")
-        print(f"Prepared birchbark (flat) -> {flat_out_path}")
-
-    # Process epigraphica Test B
-    epi_brackets_path = "data/epigraphica/epigraphica_final_cleaned_with_brackets.txt"
-    if os.path.exists(epi_brackets_path):
-        out_path = "prepared_datasets/epigraphica_classes_prepared.jsonl"
-        with (
-            open(epi_brackets_path, "r", encoding="utf-8") as f,
-            open(out_path, "w", encoding="utf-8") as f_out,
-        ):
-            for line in f:
-                if not line.strip():
-                    continue
-                original = normalize_historical_text(line.strip(), keep_brackets=True)
-                if visible_length(original) < 5:
-                    continue
-                doc = {
-                    "original": original,
-                    "macro_dialect": "CS",
-                    "source_dataset": "epigraphica",
-                    "date_target": [0.0] * 20,
-                }
-                f_out.write(json.dumps(doc, ensure_ascii=False) + "\n")
-                stats["CS"] += 1
-        print(f"Prepared epigraphica brackets -> {out_path}")
+                stats["NW"] += 1
+        print(f"Prepared birchbark -> {flat_out_path}")
 
     print("\n--- MACRO DIALECT STATS ---")
     for k, v in stats.items():

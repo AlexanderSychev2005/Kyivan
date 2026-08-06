@@ -5,8 +5,8 @@ import os
 
 # --- Pushkin Texts ---
 print("Processing Pushkin texts...")
-pushkin_csv = "data/pushkin_texts/pushkin_texts_data.csv"
-pushkin_files = glob.glob("data/pushkin_texts/**/*.txt", recursive=True)
+pushkin_csv = "data/active/pushkin_texts/pushkin_texts_data.csv"
+pushkin_files = glob.glob("data/active/pushkin_texts/**/*.txt", recursive=True)
 
 pushkin_meta = {}
 with open(pushkin_csv, "r", encoding="utf-8") as f:
@@ -46,15 +46,15 @@ for file_path in pushkin_files:
         }
     )
 
-with open("data/pushkin_texts/pushkin_texts.json", "w", encoding="utf-8") as f:
+with open("data/active/pushkin_texts/pushkin_texts.json", "w", encoding="utf-8") as f:
     json.dump(pushkin_dataset, f, ensure_ascii=False, indent=2)
 
 print(f"Saved {len(pushkin_dataset)} Pushkin documents.")
 
 # --- TOROT Texts ---
 print("\nProcessing TOROT texts...")
-torot_csv = "data/TOROT/torot_data.csv"
-torot_files = glob.glob("data/TOROT/**/*.txt", recursive=True)
+torot_csv = "data/active/torot/torot_data.csv"
+torot_files = glob.glob("data/active/torot/**/*.txt", recursive=True)
 
 torot_meta = {}
 with open(torot_csv, "r", encoding="utf-8") as f:
@@ -103,7 +103,7 @@ for file_path in torot_files:
         }
     )
 
-with open("data/TOROT/torot.json", "w", encoding="utf-8") as f:
+with open("data/active/torot/torot.json", "w", encoding="utf-8") as f:
     json.dump(torot_dataset, f, ensure_ascii=False, indent=2)
 
 print(f"Saved {len(torot_dataset)} TOROT documents.")

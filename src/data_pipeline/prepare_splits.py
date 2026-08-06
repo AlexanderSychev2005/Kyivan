@@ -139,6 +139,9 @@ def collect_test_b(path, vocab, region_label, test_b_texts, test_b_records, keep
         if not res:
             continue
         m_ids, labels, tgt_str, masked_str = res
+        # date_target dropped from the metadata copy of `doc` -- it's
+        # already the date_labels column right above, under a different key.
+        meta_doc = {k: v for k, v in doc.items() if k != "date_target"}
         test_b_records.append(
             {
                 "input_ids": m_ids,
@@ -148,7 +151,7 @@ def collect_test_b(path, vocab, region_label, test_b_texts, test_b_records, keep
                 "region_labels": region_label,
                 "original_text": tgt_str,
                 "text_with_missing": masked_str,
-                "metadata": json.dumps(doc, ensure_ascii=False),
+                "metadata": json.dumps(meta_doc, ensure_ascii=False),
             }
         )
     print(
@@ -216,7 +219,10 @@ def main():
         date_target = doc.get("date_target")
         dialect_id = DIALECT_MAP.get(doc.get("macro_dialect"))
 
-        meta_doc = {k: v for k, v in doc.items() if k != "text"}
+        # date_target excluded here too -- it's the exact same vector as
+        # the date_labels column being built right above, just under a
+        # different key, so keeping it in metadata would only duplicate it.
+        meta_doc = {k: v for k, v in doc.items() if k not in ("text", "date_target")}
         meta_json = json.dumps(meta_doc, ensure_ascii=False)
 
         # One record per document -- no pre-chunking. Long documents used to

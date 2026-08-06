@@ -22,7 +22,7 @@ class KyivanConfig(BertConfig):
 
     def __init__(
         self,
-        vocab_char_size: int = 120,
+        vocab_char_size: int = 103,
         hidden_size: int = 224,
         num_hidden_layers: int = 16,
         num_attention_heads: int = 8,

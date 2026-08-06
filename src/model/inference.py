@@ -90,31 +90,17 @@ class KyivanRestorer:
             if tid not in self.special_ids
         )
 
-    def restore_text(self, text: str, max_steps: int = 50) -> str:
+    def tokenize(self, text: str) -> List[int]:
+        """Converts user-facing input syntax (bare `?` for one missing
+        character, `#` for a lacuna of unknown length, e.g. "а се покл#е")
+        into token ids, with the leading `[SOS]` auto-prepended.
+
+        Split on `?`/`#` FIRST, then normalize only the plain-text segments
+        between them -- normalize_historical_text is designed for raw
+        historical text, not this input syntax; running it on the whole
+        string first would eat the markers themselves (a stray `?` is
+        treated as modern-punctuation noise and deleted).
         """
-        Iteratively restores a corrupted text sequence using confidence-based search and
-        extracts attention weights for interpretability.
-
-        Args:
-            text (str): The corrupted input string, using bare `?` for one
-                missing character and `#` for a lacuna of unknown length
-                (e.g., "а се покл#е"). No brackets, no `[SOS]` -- those are
-                the model's internal vocab tokens, not user-facing syntax;
-                `[SOS]` is always prepended automatically.
-            max_steps (int): A safety limit for the maximum number of decoding iterations.
-
-        Returns:
-            str: The fully restored text sequence without special tokens.
-        """
-        print(f"\n--- ORIGINAL TEXT: {text} ---")
-
-        # Tokenize: split on `?`/`#` FIRST, then normalize only the
-        # plain-text segments between them. normalize_historical_text is
-        # designed for raw historical text, not this input syntax -- run on
-        # the whole string first (as this used to do), it eats the markers:
-        # `?` is treated as modern-punctuation noise and deleted
-        # (_DELETE_CHARS), so a marker-then-normalize order loses it before
-        # it can ever be recognized.
         tokens = []
         parts = re.split(r"([?#])", text)
 
@@ -134,11 +120,105 @@ class KyivanRestorer:
                         self.char_vocab.get(ch.lower(), self.char_vocab["[UNK]"])
                     )
 
-        print(f"\n--- TOKENIZED (pre-[SOS]) LENGTH: {len(tokens)} ---")
-
-        # Ensure the global [SOS] token is present for multi-task heads
         if not tokens or tokens[0] != self.sos_id:
             tokens.insert(0, self.sos_id)
+        return tokens
+
+    def iterative_decode(
+        self, tokens: List[int], max_steps: int = 50
+    ) -> List[int]:
+        """
+        Runs the confidence-based iterative decoding algorithm on a token id
+        sequence: at each step, either resolves the model's `[#]` (unknown-
+        length lacuna) expand/stop decision, or fills the single `[-]` mask
+        the model is currently most confident about, then re-runs the full
+        forward pass so later fills condition on earlier ones -- this is the
+        non-autoregressive equivalent of left-to-right decoding, appropriate
+        here because Kyivan is a bidirectional encoder (attends both
+        directions), not a decoder like Aeneas's.
+
+        No printing, no attention extraction -- the quiet core loop, shared
+        by restore_text (CLI demo, adds saliency/printing on top) and batch
+        evaluation tools that need many docs decoded fast.
+
+        Args:
+            tokens: Token ids, `[SOS]`-prefixed, with `[-]`/`[#]` markers at
+                the positions to restore.
+            max_steps: Safety cap on decoding iterations.
+
+        Returns:
+            List[int]: The token ids with every `[-]`/`[#]` resolved.
+        """
+        tokens = list(tokens)
+        step = 0
+        while step < max_steps:
+            step += 1
+            input_ids = torch.tensor([tokens], dtype=torch.long, device=self.device)
+            attention_mask = torch.ones_like(input_ids)
+
+            with torch.no_grad():
+                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
+
+            # --- Lacuna expansion ([#]) ---
+            if self.unk_id in tokens:
+                unk_idx = tokens.index(self.unk_id)
+                unk_logits = outputs.logits_unk[0, unk_idx]
+                pred_action = torch.argmax(unk_logits).item()
+
+                if pred_action == 1:
+                    tokens.insert(unk_idx, self.mask_id)
+                else:
+                    tokens[unk_idx] = self.mask_id
+                continue
+
+            # --- Confidence-based restoration ([-]) ---
+            if self.mask_id not in tokens:
+                break
+
+            best_pos = -1
+            best_prob = -1.0
+            best_char_id = -1
+            logits_restore = outputs.logits_restore[0]
+
+            for i, tok_id in enumerate(tokens):
+                if tok_id == self.mask_id:
+                    mask_logits = logits_restore[i].clone()
+                    for sp_id in self.forbidden_restore_ids:
+                        mask_logits[sp_id] = -float("inf")
+
+                    probs = torch.softmax(mask_logits, dim=-1)
+                    max_prob, char_id = torch.max(probs, dim=-1)
+
+                    if max_prob.item() > best_prob:
+                        best_prob = max_prob.item()
+                        best_pos = i
+                        best_char_id = char_id.item()
+
+            if best_pos == -1:
+                break
+            tokens[best_pos] = best_char_id
+
+        return tokens
+
+    def restore_text(self, text: str, max_steps: int = 50) -> str:
+        """
+        Iteratively restores a corrupted text sequence using confidence-based search,
+        printing progress and a saliency map (attention weights) at each fill step.
+
+        Args:
+            text (str): The corrupted input string, using bare `?` for one
+                missing character and `#` for a lacuna of unknown length
+                (e.g., "а се покл#е"). No brackets, no `[SOS]` -- those are
+                the model's internal vocab tokens, not user-facing syntax;
+                `[SOS]` is always prepended automatically.
+            max_steps (int): A safety limit for the maximum number of decoding iterations.
+
+        Returns:
+            str: The fully restored text sequence without special tokens.
+        """
+        print(f"\n--- ORIGINAL TEXT: {text} ---")
+        tokens = self.tokenize(text)
+        print(f"\n--- TOKENIZED (incl. [SOS]) LENGTH: {len(tokens)} ---")
 
         step = 0
         while step < max_steps:
@@ -269,9 +349,7 @@ class KyivanRestorer:
                 print(f"Current sequence: {current_text}")
 
         print("\n--- FINAL RESTORED RESULT ---")
-        final_str = "".join(
-            self.id_to_char.get(t, "") for t in tokens if t not in self.special_ids
-        )
+        final_str = self.decode(tokens)
         print(final_str)
         return final_str
 

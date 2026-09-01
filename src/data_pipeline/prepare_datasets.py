@@ -52,9 +52,10 @@ def parse_year(year_str):
     return None
 
 
-def get_macro_dialect(dataset_name, dialect_str, file_source=""):
+def get_macro_dialect(dataset_name, dialect_str, file_source="", doc_id=""):
     dialect = str(dialect_str).lower()
     file_source = str(file_source).lower()
+    doc_id = str(doc_id).lower()
 
     if dataset_name == "epigraphica":
         return "CS"
@@ -63,6 +64,16 @@ def get_macro_dialect(dataset_name, dialect_str, file_source=""):
     if dataset_name == "birchbark":
         return "NW"
     if dataset_name == "UD_Old_East_Slavic-RNC":
+        # This bucket is overwhelmingly chancellery/administrative OES material
+        # (Bezobrazov, petr, morozov, gramoty_akty, afz, rib, ...), but a small
+        # minority of its constituent collections are geographically NW
+        # (gvnp = Novgorod charters, pskov_letopisi = Pskov chronicles) -- same
+        # dialect zone birchbark already tags NW, so blanket-OES contradicted
+        # that signal for these specific sub-collections. `source`/`dialect`
+        # are null for these rows, so the sub-collection is only identifiable
+        # from doc_id (e.g. "gvnp__GVNP_252", "pskov_letopisi/pskov_3_letopis").
+        if "gvnp" in doc_id or "pskov" in doc_id or "novgorod" in doc_id:
+            return "NW"
         return "OES"
 
     if dataset_name == "NKRYA":
@@ -214,7 +225,7 @@ def process_datasets():
                 dialect = doc.get("dialect", "")
                 doc_id = doc.get("doc_id", "")
 
-                macro_dialect = get_macro_dialect(ds_name, dialect, source)
+                macro_dialect = get_macro_dialect(ds_name, dialect, source, doc_id)
                 interval = parse_year(raw_year)
                 target = get_date_target(interval)
 

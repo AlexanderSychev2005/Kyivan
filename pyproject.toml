@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "accelerate>=1.14.0",
     "datasets>=5.0.0",
+    "fastapi>=0.141.1",
     "matplotlib>=3.11.0",
     "pandas>=3.0.3",
     "ruff>=0.15.21",
@@ -14,6 +15,7 @@ dependencies = [
     "seaborn>=0.13.2",
     "torch>=2.13.0",
     "transformers>=5.13.0",
+    "uvicorn>=0.52.4",
 ]
 
 [[tool.uv.index]]

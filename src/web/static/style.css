@@ -97,29 +97,36 @@ textarea::placeholder { color: var(--chainmail); opacity: 0.5; }
 .btn-restore:hover { background: var(--cinnabar); }
 .btn-restore:disabled { background: var(--chainmail); cursor: not-allowed; }
 
-.results-panel { 
-    background: #FAFAF7; 
-    border: 1px solid var(--birch-dark); 
-    border-radius: 12px; 
-    padding: 24px; 
-    min-height: 400px; 
+.results-panel {
+    min-height: 200px;
 }
 
-.res-title { 
-    font-size: 0.85rem; 
-    font-weight: 700; 
-    letter-spacing: 0.12em; 
-    text-transform: uppercase; 
-    color: var(--charcoal); 
-    margin-bottom: 16px; 
+.res-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--charcoal);
+    margin-bottom: 16px;
 }
 
-.result-card { 
-    background: white; 
-    border: 1px solid #E8DDD0; 
-    border-radius: 10px; 
-    padding: 18px; 
-    margin-bottom: 14px; 
+.card-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--charcoal);
+}
+
+.result-card {
+    background: white;
+    border: 1px solid #E8DDD0;
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 14px;
+}
+
+.output-text {
     font-size: 1.1rem;
     line-height: 1.6;
 }
@@ -150,27 +157,28 @@ textarea::placeholder { color: var(--chainmail); opacity: 0.5; }
 .classify-item-label { font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--chainmail); margin-bottom: 4px; }
 .classify-item-value { font-size: 1rem; font-weight: 600; color: var(--charcoal); }
 
-/* Histogram */
-.hist-bar-wrap { display: flex; align-items: flex-end; gap: 3px; height: 60px; margin-top: 10px; }
+/* Histogram -- generous height so bars actually read as a shape (a fixed
+   60px total, most of it eaten by the rotated year labels, left only ~25px
+   of real bar to draw 20 bins in) instead of a flattened strip. */
+.hist-bar-wrap { display: flex; align-items: flex-end; gap: 3px; height: 180px; margin-top: 10px; }
 .hist-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 2px; }
 .hist-bar { width: 100%; background: var(--birch-dark); border-radius: 2px 2px 0 0; transition: height 0.4s; min-height: 2px; cursor: pointer; }
 .hist-bar.active { background: var(--cinnabar); }
 .hist-bar:hover { background: var(--gold); }
-.hist-label { font-size: 0.5rem; color: var(--chainmail); text-align: center; writing-mode: vertical-rl; transform: rotate(180deg); height: 35px; overflow: hidden; }
+.hist-label { font-size: 0.6rem; color: var(--chainmail); text-align: center; writing-mode: vertical-rl; transform: rotate(180deg); height: 40px; overflow: hidden; }
 
-/* Grid layout */
+/* Single-column layout: input controls, then results, stacked vertically
+   (matches akkadian/src/web's .main-grid) -- was a 2-column grid, which
+   left the results panel oddly narrow once it grew a saliency-mode toggle,
+   an attribution chart, a histogram and a document grid all at once. */
 .main-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
     padding-top: 2rem;
     padding-bottom: 2rem;
 }
-@media (max-width: 1024px) {
-    .main-grid {
-        grid-template-columns: 1fr;
-    }
-}
+.input-section { display: flex; flex-direction: column; gap: 0; }
 
 .tooltip {
     position: absolute;
@@ -210,6 +218,71 @@ textarea::placeholder { color: var(--chainmail); opacity: 0.5; }
 /* Legend */
 .legend-pill { display: inline-flex; align-items: center; gap: 6px; background: var(--birch); border: 1px solid var(--birch-dark); border-radius: 20px; padding: 3px 11px; font-size: 0.75rem; }
 .legend-pill .symbol { font-size: 0.95rem; color: var(--cinnabar); font-weight: 500; }
+
+/* Similar documents: a responsive card grid (akkadian/src/web's own
+   .similar-grid pattern) -- click a card for the full text in the modal
+   below, rather than trying to fit everything into the card itself. */
+.similar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.similar-card {
+    background: var(--birch);
+    border: 1px solid var(--birch-dark);
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: border-color 0.15s;
+}
+.similar-card:hover { border-color: var(--cinnabar); }
+.similar-card-id { font-size: 0.75rem; font-weight: 700; color: var(--charcoal); }
+.similar-card-tags { font-size: 0.68rem; letter-spacing: 0.03em; text-transform: uppercase; color: var(--chainmail); }
+.similar-card-summary { font-size: 0.8rem; color: var(--charcoal); font-style: italic; }
+.similar-card-preview { font-size: 0.85rem; color: var(--charcoal); line-height: 1.4; flex: 1; }
+.similar-score-row { display: flex; align-items: center; gap: 8px; }
+.similar-score-bar-wrap { flex: 1; height: 5px; background: var(--birch-dark); border-radius: 3px; overflow: hidden; }
+.similar-score-bar { display: block; height: 100%; background: var(--cinnabar); }
+.similar-score-pct { font-size: 0.72rem; color: var(--chainmail); font-weight: 600; min-width: 32px; text-align: right; }
+
+/* Similar-document detail modal */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(44, 40, 37, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 24px;
+}
+.modal-box {
+    background: white;
+    border-radius: 12px;
+    max-width: 800px;
+    width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 24px 28px;
+    position: relative;
+}
+.modal-close {
+    position: absolute;
+    top: 12px; right: 16px;
+    background: none;
+    border: none;
+    font-size: 1.4rem;
+    line-height: 1;
+    color: var(--chainmail);
+    cursor: pointer;
+}
+.modal-close:hover { color: var(--cinnabar); }
+.modal-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; color: var(--charcoal); }
+.modal-tags { font-size: 0.8rem; color: var(--chainmail); margin-bottom: 14px; }
+.modal-source { margin: 0 0 10px 0; }
+.modal-source a { color: var(--cinnabar); font-size: 0.85rem; text-decoration: none; }
+.modal-source a:hover { text-decoration: underline; }
+.modal-section-label { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--chainmail); font-weight: 600; margin: 14px 0 4px 0; }
+.modal-text { font-size: 1rem; line-height: 1.7; color: var(--charcoal); }
 
 .flex-wrap { flex-wrap: wrap; }
 .mt-4 { margin-top: 1rem; }
